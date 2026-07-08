@@ -1,0 +1,23 @@
+# Go
+*.test
+*.out
+*.exe
+/dist/
+vendor/
+
+# Secrets
+.env
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+Desktop.ini
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
