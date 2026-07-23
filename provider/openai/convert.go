@@ -14,12 +14,31 @@ import (
 )
 
 var effortLevels = map[koine.ThinkingEffort]shared.ReasoningEffort{
+	koine.ThinkingNone:    "none",
 	koine.ThinkingMinimal: "minimal",
 	koine.ThinkingLow:     "low",
 	koine.ThinkingMedium:  "medium",
 	koine.ThinkingHigh:    "high",
 	koine.ThinkingXHigh:   "xhigh",
 	koine.ThinkingMax:     "xhigh",
+}
+
+// The thresholds mirror the anthropic provider's effort table.
+func effortForBudget(budget int) koine.ThinkingEffort {
+	switch {
+	case budget <= 0:
+		return ""
+	case budget <= 1024:
+		return koine.ThinkingMinimal
+	case budget <= 4096:
+		return koine.ThinkingLow
+	case budget <= 8192:
+		return koine.ThinkingMedium
+	case budget <= 16384:
+		return koine.ThinkingHigh
+	default:
+		return koine.ThinkingXHigh
+	}
 }
 
 func encodeRequest(req *koine.LanguageRequest) (openai.ChatCompletionNewParams, []option.RequestOption, error) {
@@ -42,7 +61,14 @@ func encodeRequest(req *koine.LanguageRequest) (openai.ChatCompletionNewParams, 
 		params.Stop = openai.ChatCompletionNewParamsStopUnion{OfStringArray: req.StopSequences}
 	}
 	if req.Thinking != nil {
-		params.ReasoningEffort = effortLevels[req.Thinking.Effort]
+		if req.Thinking.Effort == koine.ThinkingNone && req.Thinking.BudgetTokens > 0 {
+			return openai.ChatCompletionNewParams{}, nil, fmt.Errorf("ThinkingNone cannot be combined with BudgetTokens")
+		}
+		effort := req.Thinking.Effort
+		if effort == "" {
+			effort = effortForBudget(req.Thinking.BudgetTokens)
+		}
+		params.ReasoningEffort = effortLevels[effort]
 	}
 	if rf := req.ResponseFormat; rf != nil {
 		params.ResponseFormat = encodeResponseFormat(rf)

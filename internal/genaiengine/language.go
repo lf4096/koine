@@ -19,6 +19,8 @@ const syntheticIDPrefix = "koine:"
 // it via LanguageRequest.ProviderOptions keyed by the provider name.
 type LanguageOptions struct {
 	SafetySettings []*genai.SafetySetting
+	// ThinkingConfig replaces the mapping from the normalized Thinking.
+	ThinkingConfig *genai.ThinkingConfig
 }
 
 // Stream performs one streaming generateContent call.

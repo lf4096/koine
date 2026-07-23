@@ -11,13 +11,13 @@ import (
 	"github.com/lf4096/koine"
 )
 
-var effortBudgets = map[koine.ThinkingEffort]int32{
-	koine.ThinkingMinimal: 1024,
-	koine.ThinkingLow:     4096,
-	koine.ThinkingMedium:  8192,
-	koine.ThinkingHigh:    16384,
-	koine.ThinkingXHigh:   20480,
-	koine.ThinkingMax:     24576,
+var effortLevels = map[koine.ThinkingEffort]genai.ThinkingLevel{
+	koine.ThinkingMinimal: genai.ThinkingLevelMinimal,
+	koine.ThinkingLow:     genai.ThinkingLevelLow,
+	koine.ThinkingMedium:  genai.ThinkingLevelMedium,
+	koine.ThinkingHigh:    genai.ThinkingLevelHigh,
+	koine.ThinkingXHigh:   genai.ThinkingLevelHigh,
+	koine.ThinkingMax:     genai.ThinkingLevelHigh,
 }
 
 func (e *Engine) encodeRequest(req *koine.LanguageRequest) (string, []*genai.Content, *genai.GenerateContentConfig, error) {
@@ -35,12 +35,18 @@ func (e *Engine) encodeRequest(req *koine.LanguageRequest) (string, []*genai.Con
 		config.MaxOutputTokens = int32(req.MaxTokens)
 	}
 	if req.Thinking != nil {
-		budget := int32(req.Thinking.BudgetTokens)
-		if budget == 0 {
-			budget = effortBudgets[req.Thinking.Effort]
-		}
-		if budget > 0 {
-			config.ThinkingConfig = &genai.ThinkingConfig{IncludeThoughts: true, ThinkingBudget: new(budget)}
+		switch {
+		case req.Thinking.Effort == koine.ThinkingNone:
+			if req.Thinking.BudgetTokens > 0 {
+				return "", nil, nil, fmt.Errorf("ThinkingNone cannot be combined with BudgetTokens")
+			}
+			config.ThinkingConfig = &genai.ThinkingConfig{ThinkingBudget: new(int32(0))}
+		case req.Thinking.BudgetTokens > 0:
+			config.ThinkingConfig = &genai.ThinkingConfig{IncludeThoughts: true, ThinkingBudget: new(int32(req.Thinking.BudgetTokens))}
+		default:
+			if level, ok := effortLevels[req.Thinking.Effort]; ok {
+				config.ThinkingConfig = &genai.ThinkingConfig{IncludeThoughts: true, ThinkingLevel: level}
+			}
 		}
 	}
 	if rf := req.ResponseFormat; rf != nil {
@@ -66,6 +72,9 @@ func (e *Engine) encodeRequest(req *koine.LanguageRequest) (string, []*genai.Con
 	}
 	if o, ok := req.ProviderOptions[e.Name].(LanguageOptions); ok {
 		config.SafetySettings = o.SafetySettings
+		if o.ThinkingConfig != nil {
+			config.ThinkingConfig = o.ThinkingConfig
+		}
 	}
 	contents, err := e.encodeMessages(req.Messages)
 	if err != nil {

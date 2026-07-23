@@ -407,3 +407,43 @@ func TestToolResultJSONWire(t *testing.T) {
 		t.Errorf("tool_result = %+v", tr)
 	}
 }
+
+func TestThinkingWire(t *testing.T) {
+	var body json.RawMessage
+	server := sseServer(t, &body, streamFixture...)
+	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+
+	if _, err := d.Stream(context.Background(), &koine.LanguageRequest{
+		Model:    "claude-test",
+		Thinking: &koine.Thinking{Effort: koine.ThinkingNone, BudgetTokens: 100},
+		Messages: []koine.Message{koine.UserText("hi")},
+	}); err == nil {
+		t.Fatal("ThinkingNone with BudgetTokens: want error")
+	}
+
+	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
+		Model:     "claude-test",
+		MaxTokens: 100,
+		Thinking:  &koine.Thinking{Effort: koine.ThinkingNone},
+		Messages:  []koine.Message{koine.UserText("hi")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for stream.Next() {
+	}
+	stream.Close()
+
+	var wire struct {
+		Thinking struct {
+			Type string `json:"type"`
+		} `json:"thinking"`
+		MaxTokens int `json:"max_tokens"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil {
+		t.Fatalf("decode wire: %v\n%s", err, body)
+	}
+	if wire.Thinking.Type != "disabled" || wire.MaxTokens != 100 {
+		t.Errorf("wire: %+v", wire)
+	}
+}

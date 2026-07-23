@@ -42,14 +42,22 @@ func encodeRequest(req *koine.LanguageRequest) (anthropic.MessageNewParams, erro
 		params.TopP = anthropic.Float(*req.TopP)
 	}
 	if req.Thinking != nil {
-		budget := int64(req.Thinking.BudgetTokens)
-		if budget == 0 {
-			budget = effortBudgets[req.Thinking.Effort]
-		}
-		if budget > 0 {
-			params.Thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
-			if params.MaxTokens <= budget {
-				params.MaxTokens += budget
+		if req.Thinking.Effort == koine.ThinkingNone {
+			if req.Thinking.BudgetTokens > 0 {
+				return anthropic.MessageNewParams{}, fmt.Errorf("ThinkingNone cannot be combined with BudgetTokens")
+			}
+			disabled := anthropic.NewThinkingConfigDisabledParam()
+			params.Thinking = anthropic.ThinkingConfigParamUnion{OfDisabled: &disabled}
+		} else {
+			budget := int64(req.Thinking.BudgetTokens)
+			if budget == 0 {
+				budget = effortBudgets[req.Thinking.Effort]
+			}
+			if budget > 0 {
+				params.Thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
+				if params.MaxTokens <= budget {
+					params.MaxTokens += budget
+				}
 			}
 		}
 	}

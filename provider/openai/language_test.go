@@ -304,3 +304,50 @@ func TestErrorMapping(t *testing.T) {
 		t.Errorf("message = %q, want clean provider message", kerr.Message)
 	}
 }
+
+func TestThinkingWire(t *testing.T) {
+	cases := []struct {
+		thinking *koine.Thinking
+		want     string
+	}{
+		{&koine.Thinking{Effort: koine.ThinkingNone}, "none"},
+		{&koine.Thinking{BudgetTokens: 8000}, "medium"},
+		{&koine.Thinking{Effort: koine.ThinkingLow, BudgetTokens: 8000}, "low"},
+	}
+	for _, c := range cases {
+		var body json.RawMessage
+		server := sseServer(t, &body, streamFixture...)
+		d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+		stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
+			Model:    "gpt-test",
+			Thinking: c.thinking,
+			Messages: []koine.Message{koine.UserText("hi")},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for stream.Next() {
+		}
+		stream.Close()
+
+		var wire struct {
+			ReasoningEffort string `json:"reasoning_effort"`
+		}
+		if err := json.Unmarshal(body, &wire); err != nil {
+			t.Fatalf("decode wire: %v\n%s", err, body)
+		}
+		if wire.ReasoningEffort != c.want {
+			t.Errorf("%+v: reasoning_effort = %q, want %q", c.thinking, wire.ReasoningEffort, c.want)
+		}
+	}
+
+	server := sseServer(t, new(json.RawMessage), streamFixture...)
+	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	if _, err := d.Stream(context.Background(), &koine.LanguageRequest{
+		Model:    "gpt-test",
+		Thinking: &koine.Thinking{Effort: koine.ThinkingNone, BudgetTokens: 100},
+		Messages: []koine.Message{koine.UserText("hi")},
+	}); err == nil {
+		t.Fatal("ThinkingNone with BudgetTokens: want error")
+	}
+}

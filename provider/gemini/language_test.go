@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/genai"
+
 	"github.com/lf4096/koine"
 )
 
@@ -318,5 +320,64 @@ func TestErrorMapping(t *testing.T) {
 	}
 	if kerr.Message != "invalid argument" {
 		t.Errorf("message = %q, want clean provider message", kerr.Message)
+	}
+}
+
+func TestThinkingWire(t *testing.T) {
+	budget := int32(128)
+	cases := []struct {
+		name     string
+		thinking *koine.Thinking
+		opts     map[string]any
+		want     string
+	}{
+		{"effort maps to level", &koine.Thinking{Effort: koine.ThinkingHigh}, nil,
+			`{"includeThoughts":true,"thinkingLevel":"HIGH"}`},
+		{"none disables", &koine.Thinking{Effort: koine.ThinkingNone}, nil,
+			`{"thinkingBudget":0}`},
+		{"budget wins over effort", &koine.Thinking{Effort: koine.ThinkingHigh, BudgetTokens: 2048}, nil,
+			`{"includeThoughts":true,"thinkingBudget":2048}`},
+		{"provider options override", &koine.Thinking{Effort: koine.ThinkingHigh},
+			map[string]any{Name: LanguageOptions{ThinkingConfig: &genai.ThinkingConfig{ThinkingBudget: &budget}}},
+			`{"thinkingBudget":128}`},
+	}
+	for _, c := range cases {
+		var body json.RawMessage
+		server := sseServer(t, &body, streamFixture...)
+		d := newTestModel(t, server.URL)
+		stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
+			Model:           "gemini-test",
+			Thinking:        c.thinking,
+			ProviderOptions: c.opts,
+			Messages:        []koine.Message{koine.UserText("hi")},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for stream.Next() {
+		}
+		stream.Close()
+
+		var wire struct {
+			GenerationConfig struct {
+				ThinkingConfig json.RawMessage `json:"thinkingConfig"`
+			} `json:"generationConfig"`
+		}
+		if err := json.Unmarshal(body, &wire); err != nil {
+			t.Fatalf("%s: decode wire: %v\n%s", c.name, err, body)
+		}
+		if string(wire.GenerationConfig.ThinkingConfig) != c.want {
+			t.Errorf("%s: thinkingConfig = %s, want %s", c.name, wire.GenerationConfig.ThinkingConfig, c.want)
+		}
+	}
+
+	server := sseServer(t, new(json.RawMessage), streamFixture...)
+	d := newTestModel(t, server.URL)
+	if _, err := d.Stream(context.Background(), &koine.LanguageRequest{
+		Model:    "gemini-test",
+		Thinking: &koine.Thinking{Effort: koine.ThinkingNone, BudgetTokens: 100},
+		Messages: []koine.Message{koine.UserText("hi")},
+	}); err == nil {
+		t.Fatal("ThinkingNone with BudgetTokens: want error")
 	}
 }

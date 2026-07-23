@@ -163,7 +163,7 @@ The whole model marshals to JSON with type discriminators, so a `[]koine.Message
 req.Thinking = &koine.Thinking{Effort: koine.ThinkingHigh}
 ```
 
-One normalized effort scale (`minimal` / `low` / `medium` / `high` / `xhigh` / `max`), mapped to each provider's knob: token budgets on Anthropic and Gemini, `reasoning_effort` on OpenAI. `BudgetTokens` overrides the mapping where budgets apply.
+One normalized effort scale (`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`) plus a token budget. Each provider sends its native dial and converts the other: `reasoning_effort` on OpenAI, a token budget on Anthropic, `thinkingLevel` or `thinkingBudget` on Gemini. `ThinkingNone` disables reasoning; models that cannot switch it off reject the request. For full control of Gemini's native knobs, pass `gemini.LanguageOptions{ThinkingConfig: ...}`, which replaces the normalized mapping.
 
 ### Structured output
 
