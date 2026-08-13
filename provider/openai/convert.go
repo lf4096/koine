@@ -41,9 +41,9 @@ func effortForBudget(budget int) koine.ThinkingEffort {
 	}
 }
 
-func encodeRequest(req *koine.LanguageRequest) (openai.ChatCompletionNewParams, []option.RequestOption, error) {
+func encodeRequest(model string, req *koine.LanguageRequest) (openai.ChatCompletionNewParams, []option.RequestOption, error) {
 	o, _ := req.ProviderOptions[Name].(LanguageOptions)
-	params := openai.ChatCompletionNewParams{Model: shared.ChatModel(req.Model)}
+	params := openai.ChatCompletionNewParams{Model: shared.ChatModel(model)}
 	if req.MaxTokens > 0 {
 		if o.LegacyMaxTokens {
 			params.MaxTokens = openai.Int(int64(req.MaxTokens))

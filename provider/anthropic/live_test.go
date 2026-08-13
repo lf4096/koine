@@ -16,11 +16,10 @@ func TestLiveToolRoundTrip(t *testing.T) {
 	if base := testenv.Get("KOINE_TEST_ANTHROPIC_BASE_URL", ""); base != "" {
 		opts = append(opts, WithBaseURL(base))
 	}
-	d := NewLanguageModel(opts...)
+	d := New(opts...).LanguageModel(model)
 	ctx := context.Background()
 
 	req := &koine.LanguageRequest{
-		Model:     model,
 		MaxTokens: 256,
 		Tools: []koine.Tool{{
 			Name:        "get_weather",

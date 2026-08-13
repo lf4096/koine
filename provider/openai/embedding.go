@@ -17,21 +17,26 @@ type EmbedOptions struct {
 
 // EmbeddingModel embeds text via the OpenAI embeddings endpoint.
 type EmbeddingModel struct {
+	model  string
 	client openai.Client
 }
 
-// NewEmbeddingModel builds the embedding model; options as NewLanguageModel.
-func NewEmbeddingModel(opts ...Option) *EmbeddingModel {
-	return &EmbeddingModel{client: newClient(opts)}
+var _ koine.EmbeddingModel = (*EmbeddingModel)(nil)
+
+// EmbeddingModel builds the embedding model.
+func (p *Provider) EmbeddingModel(model string) *EmbeddingModel {
+	return &EmbeddingModel{model: model, client: p.client}
 }
 
-func (m *EmbeddingModel) Name() string { return Name }
+func (m *EmbeddingModel) Model() string { return m.model }
+
+func (m *EmbeddingModel) Provider() string { return Name }
 
 // Embed performs one embeddings call. EmbedRequest.Task has no OpenAI
 // equivalent and is ignored.
 func (m *EmbeddingModel) Embed(ctx context.Context, req *koine.EmbedRequest) (*koine.EmbedResponse, error) {
 	params := openai.EmbeddingNewParams{
-		Model: openai.EmbeddingModel(req.Model),
+		Model: openai.EmbeddingModel(m.model),
 		Input: openai.EmbeddingNewParamsInputUnion{OfArrayOfStrings: req.Inputs},
 	}
 	if req.Dimensions > 0 {

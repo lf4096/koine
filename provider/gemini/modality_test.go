@@ -35,13 +35,13 @@ func TestEmbed(t *testing.T) {
 	server := jsonServer(t, &body, &path, `{
 		"embeddings":[{"values":[0.1,0.2]},{"values":[0.3,0.4]}]
 	}`)
-	m, err := NewEmbeddingModel(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
+	p, err := New(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.EmbeddingModel("gemini-embedding-001")
 
 	resp, err := m.Embed(context.Background(), &koine.EmbedRequest{
-		Model:      "gemini-embedding-001",
 		Inputs:     []string{"alpha", "beta"},
 		Dimensions: 2,
 		Task:       koine.EmbedTaskDocument,
@@ -52,7 +52,7 @@ func TestEmbed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(path, "batchEmbedContents") {
+	if !strings.Contains(path, "gemini-embedding-001:batchEmbedContents") {
 		t.Errorf("path = %q", path)
 	}
 	wireStr := string(body)
@@ -80,13 +80,13 @@ func TestGenerateImage(t *testing.T) {
 			{"raiFilteredReason":"safety"}
 		]
 	}`)
-	m, err := NewImageModel(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
+	p, err := New(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.ImageModel("imagen-4.0-generate-001")
 
 	resp, err := m.GenerateImage(context.Background(), &koine.ImageRequest{
-		Model:       "imagen-4.0-generate-001",
 		Prompt:      "a cat",
 		N:           2,
 		AspectRatio: "16:9",
@@ -97,7 +97,7 @@ func TestGenerateImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(path, ":predict") {
+	if !strings.Contains(path, "imagen-4.0-generate-001:predict") {
 		t.Errorf("path = %q", path)
 	}
 	wireStr := string(body)
@@ -125,18 +125,21 @@ func TestGenerateSpeech(t *testing.T) {
 		"candidates":[{"content":{"role":"model","parts":[{"inlineData":{"mimeType":"audio/L16;codec=pcm;rate=24000","data":"`+base64.StdEncoding.EncodeToString(pcm)+`"}}]},"finishReason":"STOP","index":0}],
 		"modelVersion":"gemini-2.5-flash-preview-tts"
 	}`)
-	m, err := NewSpeechModel(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
+	p, err := New(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.SpeechModel("gemini-2.5-flash-preview-tts")
 
 	resp, err := m.GenerateSpeech(context.Background(), &koine.SpeechRequest{
-		Model: "gemini-2.5-flash-preview-tts",
 		Text:  "hello",
 		Voice: "Kore",
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(path, "gemini-2.5-flash-preview-tts:generateContent") {
+		t.Errorf("path = %q", path)
 	}
 	wireStr := string(body)
 	for _, want := range []string{`"AUDIO"`, `"voiceName":"Kore"`, `"hello"`} {
@@ -153,13 +156,13 @@ func TestResponseFormatWire(t *testing.T) {
 	var body json.RawMessage
 	var path string
 	server := jsonServer(t, &body, &path, `{"candidates":[{"content":{"role":"model","parts":[{"text":"{}"}]},"finishReason":"STOP","index":0}]}`)
-	m, err := NewLanguageModel(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
+	p, err := New(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.LanguageModel("gemini-test")
 
 	stream, err := m.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "gemini-test",
 		Messages: []koine.Message{koine.UserText("hi")},
 		ResponseFormat: &koine.ResponseFormat{
 			Schema: map[string]any{"type": "object", "properties": map[string]any{"answer": map[string]any{"type": "string"}}},
@@ -172,6 +175,9 @@ func TestResponseFormatWire(t *testing.T) {
 	}
 	stream.Close()
 
+	if !strings.Contains(path, "gemini-test:streamGenerateContent") {
+		t.Errorf("path = %q", path)
+	}
 	var wire struct {
 		GenerationConfig struct {
 			ResponseMIMEType   string         `json:"responseMimeType"`
@@ -188,12 +194,12 @@ func TestResponseFormatWire(t *testing.T) {
 }
 
 func TestResponseFormatWithToolsErrors(t *testing.T) {
-	m, err := NewLanguageModel(context.Background(), WithAPIKey("test"))
+	p, err := New(context.Background(), WithAPIKey("test"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.LanguageModel("gemini-test")
 	_, err = m.Stream(context.Background(), &koine.LanguageRequest{
-		Model:          "gemini-test",
 		Messages:       []koine.Message{koine.UserText("hi")},
 		Tools:          []koine.Tool{{Name: "f"}},
 		ResponseFormat: &koine.ResponseFormat{Schema: map[string]any{"type": "object"}},
@@ -207,13 +213,13 @@ func TestToolResultJSONNative(t *testing.T) {
 	var body json.RawMessage
 	var path string
 	server := jsonServer(t, &body, &path, `{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP","index":0}]}`)
-	m, err := NewLanguageModel(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
+	p, err := New(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.LanguageModel("gemini-test")
 
 	stream, err := m.Stream(context.Background(), &koine.LanguageRequest{
-		Model: "gemini-test",
 		Messages: []koine.Message{
 			koine.UserText("hi"),
 			{Role: koine.RoleAssistant, Blocks: koine.Blocks{

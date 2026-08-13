@@ -7,14 +7,14 @@ import (
 
 // SpeechModel synthesizes speech from text.
 type SpeechModel interface {
-	Name() string
+	Model() string
+	Provider() string
 	GenerateSpeech(ctx context.Context, req *SpeechRequest) (*SpeechResponse, error)
 }
 
 // SpeechRequest is one text-to-speech call.
 type SpeechRequest struct {
-	Model string
-	Text  string
+	Text string
 	// Voice is a provider voice id. Empty uses the provider default.
 	Voice string
 	// Format is the provider's output-format token (e.g. "mp3", "wav").
@@ -35,21 +35,21 @@ type SpeechResponse struct {
 	Audio    []byte `json:"audio"`
 	MIMEType string `json:"mime_type"`
 	Usage    Usage  `json:"usage"`
-	// Model is the provider-reported model when returned, else the requested.
+	// Model is the provider-reported model when returned, else the bound model.
 	Model    string `json:"model,omitempty"`
 	Provider string `json:"provider,omitempty"`
 }
 
 // TranscriptionModel transcribes speech to text.
 type TranscriptionModel interface {
-	Name() string
+	Model() string
+	Provider() string
 	Transcribe(ctx context.Context, req *TranscriptionRequest) (*TranscriptionResponse, error)
 }
 
 // TranscriptionRequest is one speech-to-text call. MIMEType identifies the
 // audio container (audio/mpeg, audio/wav, ...).
 type TranscriptionRequest struct {
-	Model    string
 	Audio    []byte
 	MIMEType string
 	// Language is an ISO-639-1 hint that improves accuracy.
@@ -70,7 +70,7 @@ type TranscriptionResponse struct {
 	Segments []Segment       `json:"segments,omitempty"`
 	Usage    Usage           `json:"usage"`
 	Raw      json.RawMessage `json:"raw,omitempty"`
-	// Model is the provider-reported model when returned, else the requested.
+	// Model is the bound model that produced the transcript.
 	Model    string `json:"model,omitempty"`
 	Provider string `json:"provider,omitempty"`
 }

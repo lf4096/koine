@@ -23,9 +23,9 @@ var effortBudgets = map[koine.ThinkingEffort]int64{
 	koine.ThinkingMax:     32768,
 }
 
-func encodeRequest(req *koine.LanguageRequest) (anthropic.MessageNewParams, error) {
+func encodeRequest(model string, req *koine.LanguageRequest) (anthropic.MessageNewParams, error) {
 	params := anthropic.MessageNewParams{
-		Model:         anthropic.Model(req.Model),
+		Model:         anthropic.Model(model),
 		MaxTokens:     int64(req.MaxTokens),
 		StopSequences: req.StopSequences,
 	}

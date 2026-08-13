@@ -47,11 +47,11 @@ func (e *Engine) GenerateImage(ctx context.Context, req *koine.ImageRequest) (*k
 		config.OutputMIMEType = o.OutputMIMEType
 		config.EnhancePrompt = o.EnhancePrompt
 	}
-	resp, err := e.Client.Models.GenerateImages(ctx, req.Model, req.Prompt, config)
+	resp, err := e.Client.Models.GenerateImages(ctx, e.Model, req.Prompt, config)
 	if err != nil {
 		return nil, e.wrapErr(err)
 	}
-	out := &koine.ImageResponse{Model: req.Model, Provider: e.Name}
+	out := &koine.ImageResponse{Model: e.Model, Provider: e.Name}
 	for _, gi := range resp.GeneratedImages {
 		result := &koine.ImageResult{
 			RevisedPrompt: gi.EnhancedPrompt,

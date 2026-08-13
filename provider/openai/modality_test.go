@@ -39,10 +39,9 @@ func TestEmbed(t *testing.T) {
 		"model":"text-embedding-3-small",
 		"usage":{"prompt_tokens":7,"total_tokens":7}
 	}`)
-	m := NewEmbeddingModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	m := New(WithAPIKey("test"), WithBaseURL(server.URL)).EmbeddingModel("text-embedding-3-small")
 
 	resp, err := m.Embed(context.Background(), &koine.EmbedRequest{
-		Model:      "text-embedding-3-small",
 		Inputs:     []string{"alpha", "beta"},
 		Dimensions: 2,
 		Task:       koine.EmbedTaskQuery,
@@ -79,10 +78,9 @@ func TestGenerateImage(t *testing.T) {
 		"output_format":"png",
 		"usage":{"input_tokens":5,"output_tokens":100,"total_tokens":105}
 	}`)
-	m := NewImageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	m := New(WithAPIKey("test"), WithBaseURL(server.URL)).ImageModel("gpt-image-2")
 
 	resp, err := m.GenerateImage(context.Background(), &koine.ImageRequest{
-		Model:  "gpt-image-2",
 		Prompt: "a cat",
 		Size:   "1024x1024",
 		ProviderOptions: map[string]any{Name: ImageOptions{
@@ -112,8 +110,8 @@ func TestGenerateImage(t *testing.T) {
 	if !reflect.DeepEqual(r.Image.Data, png) || r.Image.MIMEType != "image/png" || r.RevisedPrompt != "a nicer cat" {
 		t.Errorf("result = %+v image = %+v", r, r.Image)
 	}
-	if resp.Usage.InputTokens != 5 || resp.Usage.OutputTokens != 100 {
-		t.Errorf("usage = %+v", resp.Usage)
+	if resp.Usage.InputTokens != 5 || resp.Usage.OutputTokens != 100 || resp.Model != "gpt-image-2" {
+		t.Errorf("usage = %+v model = %q", resp.Usage, resp.Model)
 	}
 }
 
@@ -136,10 +134,9 @@ func TestEditImageMultipart(t *testing.T) {
 		fmt.Fprint(w, `{"created":1,"data":[{"url":"https://example.com/out.png"}]}`)
 	}))
 	defer server.Close()
-	m := NewImageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	m := New(WithAPIKey("test"), WithBaseURL(server.URL)).ImageModel("gpt-image-2")
 
 	resp, err := m.GenerateImage(context.Background(), &koine.ImageRequest{
-		Model:  "gpt-image-2",
 		Prompt: "add a hat",
 		Images: []*koine.ImageBlock{{MIMEType: "image/png", Data: []byte{1, 2}}},
 		Mask:   &koine.ImageBlock{MIMEType: "image/png", Data: []byte{3}},
@@ -152,6 +149,9 @@ func TestEditImageMultipart(t *testing.T) {
 	}
 	if got := fields["prompt"]; len(got) != 1 || got[0] != "add a hat" {
 		t.Errorf("prompt field = %v", fields)
+	}
+	if got := fields["model"]; len(got) != 1 || got[0] != "gpt-image-2" {
+		t.Errorf("model field = %v", fields)
 	}
 	if len(fileParts) != 2 {
 		t.Errorf("file parts = %v", fileParts)
@@ -173,10 +173,9 @@ func TestGenerateSpeech(t *testing.T) {
 		w.Write(audio)
 	}))
 	defer server.Close()
-	m := NewSpeechModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	m := New(WithAPIKey("test"), WithBaseURL(server.URL)).SpeechModel("gpt-4o-mini-tts")
 
 	resp, err := m.GenerateSpeech(context.Background(), &koine.SpeechRequest{
-		Model:        "gpt-4o-mini-tts",
 		Text:         "hello",
 		Voice:        "coral",
 		Format:       "mp3",
@@ -197,10 +196,10 @@ func TestGenerateSpeech(t *testing.T) {
 	if err := json.Unmarshal(body, &wire); err != nil {
 		t.Fatal(err)
 	}
-	if wire.Input != "hello" || wire.Voice != "coral" || wire.ResponseFormat != "mp3" || wire.Instructions != "cheerful" || wire.Speed != 1.5 {
+	if wire.Input != "hello" || wire.Model != "gpt-4o-mini-tts" || wire.Voice != "coral" || wire.ResponseFormat != "mp3" || wire.Instructions != "cheerful" || wire.Speed != 1.5 {
 		t.Errorf("wire = %+v", wire)
 	}
-	if string(resp.Audio) != "MP3DATA" || resp.MIMEType != "audio/mpeg" || resp.Provider != Name {
+	if string(resp.Audio) != "MP3DATA" || resp.MIMEType != "audio/mpeg" || resp.Model != "gpt-4o-mini-tts" || resp.Provider != Name {
 		t.Errorf("resp = %+v", resp)
 	}
 }
@@ -227,10 +226,9 @@ func TestTranscribe(t *testing.T) {
 		}`)
 	}))
 	defer server.Close()
-	m := NewTranscriptionModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	m := New(WithAPIKey("test"), WithBaseURL(server.URL)).TranscriptionModel("whisper-1")
 
 	resp, err := m.Transcribe(context.Background(), &koine.TranscriptionRequest{
-		Model:    "whisper-1",
 		Audio:    []byte("RIFFdata"),
 		MIMEType: "audio/wav",
 		Language: "en",
@@ -268,10 +266,9 @@ func TestTranscribe(t *testing.T) {
 func TestResponseFormatWire(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "gpt-test",
 		Messages: []koine.Message{koine.UserText("hi")},
 		ResponseFormat: &koine.ResponseFormat{
 			Schema:      map[string]any{"type": "object", "properties": map[string]any{"answer": map[string]any{"type": "string"}}},
@@ -309,10 +306,9 @@ func TestResponseFormatWire(t *testing.T) {
 func TestResponseFormatSchemaless(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:          "gpt-test",
 		Messages:       []koine.Message{koine.UserText("hi")},
 		ResponseFormat: &koine.ResponseFormat{},
 	})
@@ -339,10 +335,9 @@ func TestResponseFormatSchemaless(t *testing.T) {
 func TestToolResultJSONWire(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model: "gpt-test",
 		Messages: []koine.Message{
 			koine.UserText("hi"),
 			{Role: koine.RoleAssistant, Blocks: koine.Blocks{

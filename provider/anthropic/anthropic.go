@@ -16,12 +16,31 @@ import (
 // Name is the provider identifier, used in ProviderRaw and ProviderOptions.
 const Name = "anthropic"
 
+// Provider is a configured Anthropic-protocol endpoint. Models derive from it
+// and share its SDK client; build one Provider per credential.
+type Provider struct {
+	client anthropic.Client
+}
+
+// New builds a Provider. Without options, credentials come from the
+// environment (ANTHROPIC_API_KEY), as the official SDK defines.
+func New(opts ...Option) *Provider {
+	var cfg config
+	for _, o := range opts {
+		o(&cfg)
+	}
+	if cfg.client != nil {
+		return &Provider{client: *cfg.client}
+	}
+	return &Provider{client: anthropic.NewClient(cfg.reqOpts...)}
+}
+
 type config struct {
 	reqOpts []option.RequestOption
 	client  *anthropic.Client
 }
 
-// Option configures a model constructor.
+// Option configures a Provider.
 type Option func(*config)
 
 // WithAPIKey sets the API key.

@@ -25,19 +25,22 @@ type LanguageOptions struct {
 	ExtraBody map[string]any
 }
 
-// LanguageModel speaks the OpenAI Chat Completions protocol. It is cheap to
-// construct; build one per credential for multi-tenant use.
+// LanguageModel speaks the OpenAI Chat Completions protocol for one model.
 type LanguageModel struct {
+	model  string
 	client openai.Client
 }
 
-// NewLanguageModel builds the chat model. Without options, credentials come
-// from the environment (OPENAI_API_KEY), as the official SDK defines.
-func NewLanguageModel(opts ...Option) *LanguageModel {
-	return &LanguageModel{client: newClient(opts)}
+var _ koine.LanguageModel = (*LanguageModel)(nil)
+
+// LanguageModel builds the chat model.
+func (p *Provider) LanguageModel(model string) *LanguageModel {
+	return &LanguageModel{model: model, client: p.client}
 }
 
-func (m *LanguageModel) Name() string { return Name }
+func (m *LanguageModel) Model() string { return m.model }
+
+func (m *LanguageModel) Provider() string { return Name }
 
 func (m *LanguageModel) Capabilities() koine.LanguageCapabilities {
 	// Prompt caching is automatic on OpenAI; there is no cache control to
@@ -66,7 +69,7 @@ func (m *LanguageModel) Complete(ctx context.Context, req *koine.LanguageRequest
 
 // Stream performs one streaming Chat Completions call.
 func (m *LanguageModel) Stream(ctx context.Context, req *koine.LanguageRequest) (*koine.LanguageStream, error) {
-	params, reqOpts, err := encodeRequest(req)
+	params, reqOpts, err := encodeRequest(m.model, req)
 	if err != nil {
 		return nil, wrapErr(err)
 	}

@@ -3,7 +3,10 @@
 //
 // koine defines one canonical interface per model type -- LanguageModel,
 // EmbeddingModel, ImageModel, SpeechModel, and TranscriptionModel -- and
-// implements each only where a provider actually has the endpoint.
+// implements each only where a provider actually has the endpoint. Each
+// provider package exposes New, which builds a Provider from credentials and
+// endpoint options; models derive from it by name, so requests carry only
+// per-call parameters.
 // LanguageModel is the chat surface an agent loop consumes: one call with
 // tools, thinking, prompt caching, and usage accounting, expressed in a
 // canonical block-style message model. Everything above the model call --

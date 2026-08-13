@@ -30,7 +30,7 @@ func TestStreamThroughGateway(t *testing.T) {
 	}))
 	defer server.Close()
 
-	m, err := NewLanguageModel(context.Background(),
+	p, err := New(context.Background(),
 		WithBaseURL(server.URL),
 		WithAPIVersion("v1"),
 		WithHeader("Authorization", "Bearer test-key"),
@@ -38,10 +38,10 @@ func TestStreamThroughGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.LanguageModel("gemini-test")
 	// The raw block was minted by the gemini provider; vertex speaks the same
 	// wire format and must replay it verbatim.
 	req := &koine.LanguageRequest{
-		Model: "gemini-test",
 		Messages: []koine.Message{
 			koine.UserText("hi"),
 			{Role: koine.RoleAssistant, Blocks: koine.Blocks{
@@ -99,7 +99,7 @@ func TestEmbedSplitsBatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	m, err := NewEmbeddingModel(context.Background(),
+	p, err := New(context.Background(),
 		WithBaseURL(server.URL),
 		WithAPIVersion("v1"),
 		WithHeader("Authorization", "Bearer test-key"),
@@ -107,8 +107,8 @@ func TestEmbedSplitsBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.EmbeddingModel("gemini-embedding-001")
 	resp, err := m.Embed(context.Background(), &koine.EmbedRequest{
-		Model:  "gemini-embedding-001",
 		Inputs: []string{"alpha", "beta"},
 	})
 	if err != nil {
@@ -128,7 +128,7 @@ func TestEmbedSplitsBatch(t *testing.T) {
 }
 
 func TestExpressModeExclusiveWithProject(t *testing.T) {
-	_, err := NewLanguageModel(context.Background(), WithAPIKey("k"), WithProject("p"))
+	_, err := New(context.Background(), WithAPIKey("k"), WithProject("p"))
 	kerr, ok := errors.AsType[*koine.Error](err)
 	if !ok || kerr.Provider != Name || !strings.Contains(kerr.Message, "mutually exclusive") {
 		t.Errorf("err = %v", err)

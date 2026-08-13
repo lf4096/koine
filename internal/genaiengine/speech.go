@@ -27,7 +27,7 @@ func (e *Engine) GenerateSpeech(ctx context.Context, req *koine.SpeechRequest) (
 		text = req.Instructions + "\n\n" + text
 	}
 	contents := []*genai.Content{genai.NewContentFromText(text, genai.RoleUser)}
-	resp, err := e.Client.Models.GenerateContent(ctx, req.Model, contents, config)
+	resp, err := e.Client.Models.GenerateContent(ctx, e.Model, contents, config)
 	if err != nil {
 		return nil, e.wrapErr(err)
 	}
@@ -37,6 +37,10 @@ func (e *Engine) GenerateSpeech(ctx context.Context, req *koine.SpeechRequest) (
 			InputTokens:  int(u.PromptTokenCount),
 			OutputTokens: int(u.CandidatesTokenCount),
 		}
+	}
+	model := resp.ModelVersion
+	if model == "" {
+		model = e.Model
 	}
 	for _, cand := range resp.Candidates {
 		if cand.Content == nil {
@@ -48,7 +52,7 @@ func (e *Engine) GenerateSpeech(ctx context.Context, req *koine.SpeechRequest) (
 					Audio:    part.InlineData.Data,
 					MIMEType: part.InlineData.MIMEType,
 					Usage:    usage,
-					Model:    resp.ModelVersion,
+					Model:    model,
 					Provider: e.Name,
 				}, nil
 			}

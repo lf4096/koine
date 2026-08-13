@@ -12,15 +12,20 @@ import (
 // SpeechModel synthesizes speech via the OpenAI audio/speech endpoint. (The
 // SDK's openai.SpeechModel is an unrelated model-id string type.)
 type SpeechModel struct {
+	model  string
 	client openai.Client
 }
 
-// NewSpeechModel builds the speech model; options as NewLanguageModel.
-func NewSpeechModel(opts ...Option) *SpeechModel {
-	return &SpeechModel{client: newClient(opts)}
+var _ koine.SpeechModel = (*SpeechModel)(nil)
+
+// SpeechModel builds the speech model.
+func (p *Provider) SpeechModel(model string) *SpeechModel {
+	return &SpeechModel{model: model, client: p.client}
 }
 
-func (m *SpeechModel) Name() string { return Name }
+func (m *SpeechModel) Model() string { return m.model }
+
+func (m *SpeechModel) Provider() string { return Name }
 
 // GenerateSpeech performs one text-to-speech call. SpeechRequest.Language has
 // no OpenAI parameter and is ignored.
@@ -31,7 +36,7 @@ func (m *SpeechModel) GenerateSpeech(ctx context.Context, req *koine.SpeechReque
 	}
 	params := openai.AudioSpeechNewParams{
 		Input:          req.Text,
-		Model:          openai.SpeechModel(req.Model),
+		Model:          openai.SpeechModel(m.model),
 		Voice:          openai.AudioSpeechNewParamsVoiceUnion{OfString: openai.String(voice)},
 		ResponseFormat: openai.AudioSpeechNewParamsResponseFormat(req.Format),
 	}
@@ -53,7 +58,7 @@ func (m *SpeechModel) GenerateSpeech(ctx context.Context, req *koine.SpeechReque
 	return &koine.SpeechResponse{
 		Audio:    audio,
 		MIMEType: resp.Header.Get("Content-Type"),
-		Model:    req.Model,
+		Model:    m.model,
 		Provider: Name,
 	}, nil
 }

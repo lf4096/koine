@@ -56,10 +56,9 @@ var streamFixture = []string{
 func TestStreamEventsAndResponse(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "claude-test",
 		Messages: []koine.Message{koine.UserText("hi")},
 	})
 	if err != nil {
@@ -130,12 +129,11 @@ func TestStreamEventsAndResponse(t *testing.T) {
 func TestEncodeRequestWire(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
 
 	topK := 5
 	temp := 0.5
 	req := &koine.LanguageRequest{
-		Model:          "claude-test",
 		System:         "be brief",
 		MaxTokens:      1000,
 		Temperature:    &temp,
@@ -253,10 +251,9 @@ func TestEncodeRequestWire(t *testing.T) {
 func TestForeignThinkingDropped(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
 
 	req := &koine.LanguageRequest{
-		Model: "claude-test",
 		Messages: []koine.Message{
 			koine.UserText("hi"),
 			{Role: koine.RoleAssistant, Blocks: koine.Blocks{
@@ -297,10 +294,9 @@ func TestErrorMapping(t *testing.T) {
 		fmt.Fprint(w, `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`)
 	}))
 	defer server.Close()
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "claude-test",
 		Messages: []koine.Message{koine.UserText("hi")},
 	})
 	if err != nil {
@@ -323,10 +319,9 @@ func TestErrorMapping(t *testing.T) {
 func TestStructuredOutputWire(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "claude-test",
 		Messages: []koine.Message{koine.UserText("hi")},
 		ResponseFormat: &koine.ResponseFormat{
 			Schema: map[string]any{"type": "object", "properties": map[string]any{"answer": map[string]any{"type": "string"}}},
@@ -356,9 +351,8 @@ func TestStructuredOutputWire(t *testing.T) {
 }
 
 func TestStructuredOutputRequiresSchema(t *testing.T) {
-	d := NewLanguageModel(WithAPIKey("test"))
+	d := New(WithAPIKey("test")).LanguageModel("claude-test")
 	_, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:          "claude-test",
 		Messages:       []koine.Message{koine.UserText("hi")},
 		ResponseFormat: &koine.ResponseFormat{},
 	})
@@ -370,10 +364,9 @@ func TestStructuredOutputRequiresSchema(t *testing.T) {
 func TestToolResultJSONWire(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model: "claude-test",
 		Messages: []koine.Message{
 			koine.UserText("hi"),
 			{Role: koine.RoleAssistant, Blocks: koine.Blocks{
@@ -411,10 +404,9 @@ func TestToolResultJSONWire(t *testing.T) {
 func TestThinkingWire(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
 
 	if _, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "claude-test",
 		Thinking: &koine.Thinking{Effort: koine.ThinkingNone, BudgetTokens: 100},
 		Messages: []koine.Message{koine.UserText("hi")},
 	}); err == nil {
@@ -422,7 +414,6 @@ func TestThinkingWire(t *testing.T) {
 	}
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:     "claude-test",
 		MaxTokens: 100,
 		Thinking:  &koine.Thinking{Effort: koine.ThinkingNone},
 		Messages:  []koine.Message{koine.UserText("hi")},

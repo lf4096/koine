@@ -16,17 +16,16 @@ type LanguageModel struct {
 	e genaiengine.Engine
 }
 
-// NewLanguageModel builds the chat model. Without options, credentials come
-// from the environment (GEMINI_API_KEY), as the official SDK defines.
-func NewLanguageModel(ctx context.Context, opts ...Option) (*LanguageModel, error) {
-	e, err := newEngine(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-	return &LanguageModel{e: e}, nil
+var _ koine.LanguageModel = (*LanguageModel)(nil)
+
+// LanguageModel builds the chat model.
+func (p *Provider) LanguageModel(model string) *LanguageModel {
+	return &LanguageModel{e: p.engine(model)}
 }
 
-func (m *LanguageModel) Name() string { return Name }
+func (m *LanguageModel) Model() string { return m.e.Model }
+
+func (m *LanguageModel) Provider() string { return Name }
 
 func (m *LanguageModel) Capabilities() koine.LanguageCapabilities {
 	// Gemini caches implicitly; explicit cache objects are out of scope, so

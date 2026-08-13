@@ -15,16 +15,16 @@ type EmbeddingModel struct {
 	e genaiengine.Engine
 }
 
-// NewEmbeddingModel builds the embedding model; options as NewLanguageModel.
-func NewEmbeddingModel(ctx context.Context, opts ...Option) (*EmbeddingModel, error) {
-	e, err := newEngine(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-	return &EmbeddingModel{e: e}, nil
+var _ koine.EmbeddingModel = (*EmbeddingModel)(nil)
+
+// EmbeddingModel builds the embedding model.
+func (p *Provider) EmbeddingModel(model string) *EmbeddingModel {
+	return &EmbeddingModel{e: p.engine(model)}
 }
 
-func (m *EmbeddingModel) Name() string { return Name }
+func (m *EmbeddingModel) Model() string { return m.e.Model }
+
+func (m *EmbeddingModel) Provider() string { return Name }
 
 // Embed performs one embedContent call.
 func (m *EmbeddingModel) Embed(ctx context.Context, req *koine.EmbedRequest) (*koine.EmbedResponse, error) {

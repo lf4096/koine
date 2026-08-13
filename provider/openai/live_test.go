@@ -15,10 +15,9 @@ func TestLiveStream(t *testing.T) {
 	if base := testenv.Get("KOINE_TEST_OPENAI_BASE_URL", ""); base != "" {
 		opts = append(opts, WithBaseURL(base))
 	}
-	d := NewLanguageModel(opts...)
+	d := New(opts...).LanguageModel(model)
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:     model,
 		MaxTokens: 64,
 		Messages:  []koine.Message{koine.UserText("Reply with one word: pong")},
 	})

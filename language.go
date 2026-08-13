@@ -10,12 +10,12 @@ import (
 	"strings"
 )
 
-// LanguageModel translates between the canonical koine model and one provider
-// protocol. Implementations only translate formats; transport stays in the
-// official provider SDK underneath. Implementations are cheap to construct,
-// so per-tenant credentials are handled by constructing one per key.
+// LanguageModel is one model spoken through one provider protocol, bound at
+// construction. Implementations only translate formats; transport stays in
+// the official provider SDK underneath.
 type LanguageModel interface {
-	Name() string
+	Model() string
+	Provider() string
 	Capabilities() LanguageCapabilities
 	// Complete performs one call and returns the final response.
 	Complete(ctx context.Context, req *LanguageRequest) (*LanguageResponse, error)
@@ -39,7 +39,6 @@ type LanguageCapabilities struct {
 // LanguageRequest is one model call. It carries only the surface an agent loop
 // consumes; provider-specific parameters travel in ProviderOptions.
 type LanguageRequest struct {
-	Model       string
 	System      string
 	Messages    []Message
 	Tools       []Tool
@@ -301,7 +300,8 @@ type Thinking struct {
 }
 
 // ThinkingEffort is a normalized reasoning-effort level. Providers map it to
-// their native knob: an effort level or a token budget.
+// their native knob: an effort level or a token budget. On Gemini the knob is
+// thinkingLevel, which Gemini 2.x models reject; use BudgetTokens for those.
 type ThinkingEffort string
 
 const (

@@ -20,7 +20,7 @@ var effortLevels = map[koine.ThinkingEffort]genai.ThinkingLevel{
 	koine.ThinkingMax:     genai.ThinkingLevelHigh,
 }
 
-func (e *Engine) encodeRequest(req *koine.LanguageRequest) (string, []*genai.Content, *genai.GenerateContentConfig, error) {
+func (e *Engine) encodeRequest(req *koine.LanguageRequest) ([]*genai.Content, *genai.GenerateContentConfig, error) {
 	config := &genai.GenerateContentConfig{StopSequences: req.StopSequences}
 	if req.System != "" {
 		config.SystemInstruction = &genai.Content{Parts: []*genai.Part{{Text: req.System}}}
@@ -38,7 +38,7 @@ func (e *Engine) encodeRequest(req *koine.LanguageRequest) (string, []*genai.Con
 		switch {
 		case req.Thinking.Effort == koine.ThinkingNone:
 			if req.Thinking.BudgetTokens > 0 {
-				return "", nil, nil, fmt.Errorf("ThinkingNone cannot be combined with BudgetTokens")
+				return nil, nil, fmt.Errorf("ThinkingNone cannot be combined with BudgetTokens")
 			}
 			config.ThinkingConfig = &genai.ThinkingConfig{ThinkingBudget: new(int32(0))}
 		case req.Thinking.BudgetTokens > 0:
@@ -53,7 +53,7 @@ func (e *Engine) encodeRequest(req *koine.LanguageRequest) (string, []*genai.Con
 		// The generateContent API rejects JSON response constraints combined
 		// with function declarations.
 		if len(req.Tools) > 0 {
-			return "", nil, nil, fmt.Errorf("ResponseFormat cannot be combined with Tools")
+			return nil, nil, fmt.Errorf("ResponseFormat cannot be combined with Tools")
 		}
 		config.ResponseMIMEType = "application/json"
 		if len(rf.Schema) > 0 {
@@ -78,9 +78,9 @@ func (e *Engine) encodeRequest(req *koine.LanguageRequest) (string, []*genai.Con
 	}
 	contents, err := e.encodeMessages(req.Messages)
 	if err != nil {
-		return "", nil, nil, err
+		return nil, nil, err
 	}
-	return req.Model, contents, config, nil
+	return contents, config, nil
 }
 
 func encodeTool(t koine.Tool) *genai.FunctionDeclaration {

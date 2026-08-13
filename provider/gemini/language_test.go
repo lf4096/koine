@@ -35,11 +35,11 @@ func sseServer(t *testing.T, capture *json.RawMessage, chunks ...string) *httpte
 
 func newTestModel(t *testing.T, serverURL string) *LanguageModel {
 	t.Helper()
-	d, err := NewLanguageModel(context.Background(), WithAPIKey("test"), WithBaseURL(serverURL))
+	p, err := New(context.Background(), WithAPIKey("test"), WithBaseURL(serverURL))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d
+	return p.LanguageModel("gemini-test")
 }
 
 // "c2ln" is base64("sig"): ThoughtSignature is []byte and travels base64 in JSON.
@@ -56,7 +56,6 @@ func TestStreamEventsAndResponse(t *testing.T) {
 	d := newTestModel(t, server.URL)
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "gemini-test",
 		Messages: []koine.Message{koine.UserText("hi")},
 	})
 	if err != nil {
@@ -130,7 +129,6 @@ func TestEncodeRequestWire(t *testing.T) {
 	d := newTestModel(t, server.URL)
 
 	req := &koine.LanguageRequest{
-		Model:     "gemini-test",
 		System:    "be brief",
 		MaxTokens: 800,
 		Thinking:  &koine.Thinking{BudgetTokens: 2048},
@@ -244,7 +242,6 @@ func TestThinkingRawRoundTrip(t *testing.T) {
 
 	rawJSON := `{"text":"pondering","thought":true,"thoughtSignature":"c2ln"}`
 	req := &koine.LanguageRequest{
-		Model: "gemini-test",
 		Messages: []koine.Message{
 			koine.UserText("hi"),
 			{Role: koine.RoleAssistant, Blocks: koine.Blocks{
@@ -285,7 +282,6 @@ func TestToolResultWithoutMatchingCall(t *testing.T) {
 	d := newTestModel(t, server.URL)
 
 	_, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "gemini-test",
 		Messages: []koine.Message{koine.ToolResultText("orphan", "x", false)},
 	})
 	if err == nil || !strings.Contains(err.Error(), "no matching tool call") {
@@ -303,7 +299,6 @@ func TestErrorMapping(t *testing.T) {
 	d := newTestModel(t, server.URL)
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "gemini-test",
 		Messages: []koine.Message{koine.UserText("hi")},
 	})
 	if err != nil {
@@ -346,7 +341,6 @@ func TestThinkingWire(t *testing.T) {
 		server := sseServer(t, &body, streamFixture...)
 		d := newTestModel(t, server.URL)
 		stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-			Model:           "gemini-test",
 			Thinking:        c.thinking,
 			ProviderOptions: c.opts,
 			Messages:        []koine.Message{koine.UserText("hi")},
@@ -374,7 +368,6 @@ func TestThinkingWire(t *testing.T) {
 	server := sseServer(t, new(json.RawMessage), streamFixture...)
 	d := newTestModel(t, server.URL)
 	if _, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "gemini-test",
 		Thinking: &koine.Thinking{Effort: koine.ThinkingNone, BudgetTokens: 100},
 		Messages: []koine.Message{koine.UserText("hi")},
 	}); err == nil {

@@ -15,16 +15,16 @@ type ImageModel struct {
 	e genaiengine.Engine
 }
 
-// NewImageModel builds the image model; options as NewLanguageModel.
-func NewImageModel(ctx context.Context, opts ...Option) (*ImageModel, error) {
-	e, err := newEngine(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-	return &ImageModel{e: e}, nil
+var _ koine.ImageModel = (*ImageModel)(nil)
+
+// ImageModel builds the image model.
+func (p *Provider) ImageModel(model string) *ImageModel {
+	return &ImageModel{e: p.engine(model)}
 }
 
-func (m *ImageModel) Name() string { return Name }
+func (m *ImageModel) Model() string { return m.e.Model }
+
+func (m *ImageModel) Provider() string { return Name }
 
 // GenerateImage performs one Imagen generateImages call.
 func (m *ImageModel) GenerateImage(ctx context.Context, req *koine.ImageRequest) (*koine.ImageResponse, error) {

@@ -19,6 +19,8 @@ type Engine struct {
 	Client *genai.Client
 	// Name is stamped on responses, errors, and ProviderRaw.
 	Name string
+	// Model is the bound model, sent on every call.
+	Model string
 	// AcceptRaw lists provider names whose ProviderRaw this engine replays
 	// verbatim. gemini and vertex speak the same wire format, so each accepts
 	// the other's raw blocks; anything else converts lossily.

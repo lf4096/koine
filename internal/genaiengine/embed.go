@@ -38,7 +38,7 @@ func (e *Engine) Embed(ctx context.Context, req *koine.EmbedRequest) (*koine.Emb
 		contents[i] = genai.NewContentFromText(input, genai.RoleUser)
 	}
 
-	out := &koine.EmbedResponse{Model: req.Model, Provider: e.Name}
+	out := &koine.EmbedResponse{Model: e.Model, Provider: e.Name}
 	batches := [][]*genai.Content{contents}
 	if e.SplitEmbedBatch && len(contents) > 1 {
 		batches = batches[:0]
@@ -48,7 +48,7 @@ func (e *Engine) Embed(ctx context.Context, req *koine.EmbedRequest) (*koine.Emb
 	}
 	var tokens float32
 	for _, batch := range batches {
-		resp, err := e.Client.Models.EmbedContent(ctx, req.Model, batch, config)
+		resp, err := e.Client.Models.EmbedContent(ctx, e.Model, batch, config)
 		if err != nil {
 			return nil, e.wrapErr(err)
 		}

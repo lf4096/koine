@@ -13,10 +13,9 @@ import (
 // without hitting the network.
 
 func ExampleLanguageModel_Complete() {
-	m := anthropic.NewLanguageModel()
+	m := anthropic.New().LanguageModel("claude-sonnet-4-5")
 
 	resp, err := m.Complete(context.Background(), &koine.LanguageRequest{
-		Model:    "claude-sonnet-4-5",
 		Messages: []koine.Message{koine.UserText("Say hello in Greek.")},
 	})
 	if err != nil {
@@ -27,10 +26,9 @@ func ExampleLanguageModel_Complete() {
 
 func ExampleLanguageModel_Stream() {
 	ctx := context.Background()
-	m := anthropic.NewLanguageModel()
+	m := anthropic.New().LanguageModel("claude-sonnet-4-5")
 
 	stream, err := m.Stream(ctx, &koine.LanguageRequest{
-		Model:    "claude-sonnet-4-5",
 		Thinking: &koine.Thinking{Effort: koine.ThinkingMedium},
 		Messages: []koine.Message{koine.UserText("Explain koine Greek briefly.")},
 	})
@@ -50,10 +48,9 @@ func ExampleLanguageModel_Stream() {
 
 func ExampleLanguageModel_Complete_toolLoop() {
 	ctx := context.Background()
-	m := anthropic.NewLanguageModel()
+	m := anthropic.New().LanguageModel("claude-sonnet-4-5")
 
 	req := &koine.LanguageRequest{
-		Model: "claude-sonnet-4-5",
 		Tools: []koine.Tool{{
 			Name:        "get_weather",
 			Description: "Get current weather for a city",

@@ -24,22 +24,26 @@ type TranscriptionOptions struct {
 // TranscriptionModel transcribes audio via the OpenAI audio/transcriptions
 // endpoint.
 type TranscriptionModel struct {
+	model  string
 	client openai.Client
 }
 
-// NewTranscriptionModel builds the transcription model; options as
-// NewLanguageModel.
-func NewTranscriptionModel(opts ...Option) *TranscriptionModel {
-	return &TranscriptionModel{client: newClient(opts)}
+var _ koine.TranscriptionModel = (*TranscriptionModel)(nil)
+
+// TranscriptionModel builds the transcription model.
+func (p *Provider) TranscriptionModel(model string) *TranscriptionModel {
+	return &TranscriptionModel{model: model, client: p.client}
 }
 
-func (m *TranscriptionModel) Name() string { return Name }
+func (m *TranscriptionModel) Model() string { return m.model }
+
+func (m *TranscriptionModel) Provider() string { return Name }
 
 // Transcribe performs one speech-to-text call.
 func (m *TranscriptionModel) Transcribe(ctx context.Context, req *koine.TranscriptionRequest) (*koine.TranscriptionResponse, error) {
 	params := openai.AudioTranscriptionNewParams{
 		File:  openai.File(bytes.NewReader(req.Audio), "audio."+audioExtFromMIME(req.MIMEType), req.MIMEType),
-		Model: openai.AudioModel(req.Model),
+		Model: openai.AudioModel(m.model),
 	}
 	if req.Language != "" {
 		params.Language = openai.String(req.Language)
@@ -67,7 +71,7 @@ func (m *TranscriptionModel) Transcribe(ctx context.Context, req *koine.Transcri
 			OutputTokens: int(resp.Usage.OutputTokens),
 		},
 		Raw:      json.RawMessage(resp.RawJSON()),
-		Model:    req.Model,
+		Model:    m.model,
 		Provider: Name,
 	}
 	for _, s := range resp.Segments {

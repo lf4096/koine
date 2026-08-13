@@ -6,13 +6,13 @@ import "context"
 // Chat-native image output stays on LanguageModel as ImageBlock content in
 // the response message.
 type ImageModel interface {
-	Name() string
+	Model() string
+	Provider() string
 	GenerateImage(ctx context.Context, req *ImageRequest) (*ImageResponse, error)
 }
 
 // ImageRequest is one image-generation call.
 type ImageRequest struct {
-	Model  string
 	Prompt string
 	// Images are input images: empty means text-to-image; one or more routes
 	// the call to the provider's edit endpoint.
@@ -38,7 +38,7 @@ type ImageRequest struct {
 type ImageResponse struct {
 	Results []*ImageResult `json:"results"`
 	Usage   Usage          `json:"usage"`
-	// Model is the provider-reported model when returned, else the requested.
+	// Model is the bound model that generated the images.
 	Model    string `json:"model,omitempty"`
 	Provider string `json:"provider,omitempty"`
 }

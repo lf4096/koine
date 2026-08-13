@@ -25,11 +25,11 @@ type LanguageOptions struct {
 
 // Stream performs one streaming generateContent call.
 func (e *Engine) Stream(ctx context.Context, req *koine.LanguageRequest) (*koine.LanguageStream, error) {
-	model, contents, config, err := e.encodeRequest(req)
+	contents, config, err := e.encodeRequest(req)
 	if err != nil {
 		return nil, e.wrapErr(err)
 	}
-	pull, stop := iter.Pull2(e.Client.Models.GenerateContentStream(ctx, model, contents, config))
+	pull, stop := iter.Pull2(e.Client.Models.GenerateContentStream(ctx, e.Model, contents, config))
 
 	acc := &accumulator{name: e.Name}
 	var pending []koine.Event

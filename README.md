@@ -27,7 +27,7 @@ The four providers are protocol adapters, not per-vendor bindings, so they cover
 - **`gemini`** — the Gemini API.
 - **`vertex`** — the same wire format as gemini, spoken through Vertex AI paths and auth (GCP credentials, express API keys, or self-authenticating gateways). Raw blocks replay across gemini and vertex without loss.
 
-Construction is uniform: `New<Modality>Model(...)` in each provider package, e.g. `openai.NewLanguageModel()`, `gemini.NewEmbeddingModel(ctx)`, `vertex.NewImageModel(ctx, vertex.WithProject("p"), vertex.WithLocation("global"))`. Without options, credentials come from the environment exactly as the official SDK defines (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, Application Default Credentials).
+Construction is two-layered: `New(...)` in each provider package builds a provider holding credentials, endpoint, and one SDK client, and models derive from it by name — `openai.New().LanguageModel("gpt-4.1-mini")`, or `p, err := vertex.New(ctx, vertex.WithProject("my-project"), vertex.WithLocation("global"))` then `p.ImageModel("imagen-4.0-generate-001")`. gemini and vertex take a `ctx` and return an error because their SDK builds the client eagerly; deriving a model never fails. Without options, credentials come from the environment exactly as the official SDK defines (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, Application Default Credentials).
 
 ## Why koine
 
@@ -51,10 +51,9 @@ import (
 )
 
 func main() {
-	m := anthropic.NewLanguageModel() // reads ANTHROPIC_API_KEY
+	m := anthropic.New().LanguageModel("claude-sonnet-4-5") // reads ANTHROPIC_API_KEY
 
 	resp, err := m.Complete(context.Background(), &koine.LanguageRequest{
-		Model:    "claude-sonnet-4-5",
 		Messages: []koine.Message{koine.UserText("Say hello in Greek.")},
 	})
 	if err != nil {
@@ -70,7 +69,8 @@ func main() {
 
 ```go
 type LanguageModel interface {
-	Name() string
+	Model() string
+	Provider() string
 	Capabilities() LanguageCapabilities
 	Complete(ctx context.Context, req *LanguageRequest) (*LanguageResponse, error)
 	Stream(ctx context.Context, req *LanguageRequest) (*LanguageStream, error)
@@ -107,7 +107,6 @@ koine stops at the single model call; the loop is yours. A complete tool round t
 
 ```go
 req := &koine.LanguageRequest{
-	Model: "claude-sonnet-4-5",
 	Tools: []koine.Tool{{
 		Name:        "get_weather",
 		Description: "Get current weather for a city",
@@ -163,7 +162,7 @@ The whole model marshals to JSON with type discriminators, so a `[]koine.Message
 req.Thinking = &koine.Thinking{Effort: koine.ThinkingHigh}
 ```
 
-One normalized effort scale (`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`) plus a token budget. Each provider sends its native dial and converts the other: `reasoning_effort` on OpenAI, a token budget on Anthropic, `thinkingLevel` or `thinkingBudget` on Gemini. `ThinkingNone` disables reasoning; models that cannot switch it off reject the request. For full control of Gemini's native knobs, pass `gemini.LanguageOptions{ThinkingConfig: ...}`, which replaces the normalized mapping.
+One normalized effort scale (`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`) plus a token budget. Each provider sends its native dial and converts the other: `reasoning_effort` on OpenAI, a token budget on Anthropic, `thinkingLevel` or `thinkingBudget` on Gemini. On Gemini, `Effort` maps to `thinkingLevel`, which needs Gemini 3; pass `BudgetTokens` for Gemini 2.x models, which reject it. `ThinkingNone` disables reasoning; models that cannot switch it off reject the request. For full control of Gemini's native knobs, pass `gemini.LanguageOptions{ThinkingConfig: ...}` (or `vertex.LanguageOptions`, the same type), which replaces the normalized mapping.
 
 ### Structured output
 
@@ -194,10 +193,9 @@ On Anthropic this sets a top-level `cache_control`, caching the whole prefix up 
 ## Embedding models
 
 ```go
-em := openai.NewEmbeddingModel()
+em := openai.New().EmbeddingModel("text-embedding-3-small")
 
 resp, err := em.Embed(ctx, &koine.EmbedRequest{
-	Model:  "text-embedding-3-small",
 	Inputs: []string{"first text", "second text"},
 	Task:   koine.EmbedTaskQuery, // normalized task hint; mapped or ignored per provider
 })
@@ -209,10 +207,9 @@ Embeddings are `[]float32` end to end — the native output type of the Gemini S
 ## Image models
 
 ```go
-im := openai.NewImageModel()
+im := openai.New().ImageModel("gpt-image-1")
 
 resp, err := im.GenerateImage(ctx, &koine.ImageRequest{
-	Model:  "gpt-image-1",
 	Prompt: "an ancient greek scroll",
 	Size:   "1024x1024", // or AspectRatio: "16:9" — set whichever the model understands
 	N:      2,
@@ -229,7 +226,6 @@ Passing input images routes the call to the provider's edit endpoint:
 
 ```go
 resp, err := im.GenerateImage(ctx, &koine.ImageRequest{
-	Model:  "gpt-image-1",
 	Prompt: "replace the sky with an aurora",
 	Images: []*koine.ImageBlock{{MIMEType: "image/png", Data: original}},
 	Mask:   &koine.ImageBlock{MIMEType: "image/png", Data: mask}, // optional; transparent = edit here
@@ -243,10 +239,9 @@ Chat-native image output (Gemini Flash Image) needs no `ImageModel` — it arriv
 ## Speech models (TTS)
 
 ```go
-sm := openai.NewSpeechModel()
+sm := openai.New().SpeechModel("gpt-4o-mini-tts")
 
 resp, err := sm.GenerateSpeech(ctx, &koine.SpeechRequest{
-	Model:  "gpt-4o-mini-tts",
 	Text:   "Koine speaks every tongue.",
 	Voice:  "alloy", // provider voice id
 	Format: "mp3",   // provider format token; ignored where output is fixed
@@ -259,10 +254,9 @@ os.WriteFile("hello.mp3", resp.Audio, 0o644)
 ## Transcription models (STT)
 
 ```go
-tm := openai.NewTranscriptionModel()
+tm := openai.New().TranscriptionModel("gpt-4o-mini-transcribe")
 
 resp, err := tm.Transcribe(ctx, &koine.TranscriptionRequest{
-	Model:    "gpt-4o-mini-transcribe",
 	Audio:    audioBytes,
 	MIMEType: "audio/mpeg",
 	Language: "en", // optional ISO-639-1 hint
@@ -274,13 +268,14 @@ Transcripts normalize `Segments` (timestamped spans) and `Duration` where the pr
 
 ## Multi-tenant / BYOK
 
-Models are cheap to construct — build one per credential:
+Providers are cheap to construct — build one per credential, and derive models from it:
 
 ```go
-m := openai.NewLanguageModel(
+p := openai.New(
 	openai.WithAPIKey(tenantKey),
 	openai.WithBaseURL("https://api.deepseek.com"),
 )
+m := p.LanguageModel("deepseek-chat")
 ```
 
 Every provider accepts `WithAPIKey`, `WithBaseURL`, `WithHTTPClient`, and `WithClient(...)` to inject a fully configured official SDK client (custom proxies, middleware, ...). `vertex` adds GCP-specific construction: `WithProject`/`WithLocation`/`WithCredentials` for ADC, `WithAPIKey` for express mode, or `WithBaseURL`+`WithAPIVersion`+`WithHeader` for bearer-token gateways that proxy Vertex paths.

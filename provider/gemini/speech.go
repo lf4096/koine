@@ -12,16 +12,16 @@ type SpeechModel struct {
 	e genaiengine.Engine
 }
 
-// NewSpeechModel builds the speech model; options as NewLanguageModel.
-func NewSpeechModel(ctx context.Context, opts ...Option) (*SpeechModel, error) {
-	e, err := newEngine(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-	return &SpeechModel{e: e}, nil
+var _ koine.SpeechModel = (*SpeechModel)(nil)
+
+// SpeechModel builds the speech model.
+func (p *Provider) SpeechModel(model string) *SpeechModel {
+	return &SpeechModel{e: p.engine(model)}
 }
 
-func (m *SpeechModel) Name() string { return Name }
+func (m *SpeechModel) Model() string { return m.e.Model }
+
+func (m *SpeechModel) Provider() string { return Name }
 
 // GenerateSpeech performs one TTS call; output is raw PCM audio.
 func (m *SpeechModel) GenerateSpeech(ctx context.Context, req *koine.SpeechRequest) (*koine.SpeechResponse, error) {

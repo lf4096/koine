@@ -20,9 +20,8 @@ func liveOpts(t *testing.T) []Option {
 }
 
 func TestLiveEmbed(t *testing.T) {
-	m := NewEmbeddingModel(liveOpts(t)...)
+	m := New(liveOpts(t)...).EmbeddingModel(testenv.Get("KOINE_TEST_OPENAI_EMBED_MODEL", "text-embedding-3-small"))
 	resp, err := m.Embed(context.Background(), &koine.EmbedRequest{
-		Model:  testenv.Get("KOINE_TEST_OPENAI_EMBED_MODEL", "text-embedding-3-small"),
 		Inputs: []string{"the common tongue", "one tongue for every LLM"},
 	})
 	if err != nil {
@@ -37,11 +36,11 @@ func TestLiveEmbed(t *testing.T) {
 }
 
 func TestLiveSpeechTranscribeRoundTrip(t *testing.T) {
-	opts := liveOpts(t)
+	p := New(liveOpts(t)...)
 	ctx := context.Background()
 
-	speech, err := NewSpeechModel(opts...).GenerateSpeech(ctx, &koine.SpeechRequest{
-		Model:  testenv.Get("KOINE_TEST_OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
+	sm := p.SpeechModel(testenv.Get("KOINE_TEST_OPENAI_TTS_MODEL", "gpt-4o-mini-tts"))
+	speech, err := sm.GenerateSpeech(ctx, &koine.SpeechRequest{
 		Text:   "Koine speaks every tongue.",
 		Voice:  "alloy",
 		Format: "mp3",
@@ -53,8 +52,8 @@ func TestLiveSpeechTranscribeRoundTrip(t *testing.T) {
 		t.Fatalf("speech = %d bytes, mime %q", len(speech.Audio), speech.MIMEType)
 	}
 
-	transcript, err := NewTranscriptionModel(opts...).Transcribe(ctx, &koine.TranscriptionRequest{
-		Model:    testenv.Get("KOINE_TEST_OPENAI_STT_MODEL", "gpt-4o-mini-transcribe"),
+	tm := p.TranscriptionModel(testenv.Get("KOINE_TEST_OPENAI_STT_MODEL", "gpt-4o-mini-transcribe"))
+	transcript, err := tm.Transcribe(ctx, &koine.TranscriptionRequest{
 		Audio:    speech.Audio,
 		MIMEType: "audio/mpeg",
 		Language: "en",
@@ -69,9 +68,8 @@ func TestLiveSpeechTranscribeRoundTrip(t *testing.T) {
 }
 
 func TestLiveGenerateImage(t *testing.T) {
-	m := NewImageModel(liveOpts(t)...)
+	m := New(liveOpts(t)...).ImageModel(testenv.Get("KOINE_TEST_OPENAI_IMAGE_MODEL", "gpt-image-1-mini"))
 	resp, err := m.GenerateImage(context.Background(), &koine.ImageRequest{
-		Model:  testenv.Get("KOINE_TEST_OPENAI_IMAGE_MODEL", "gpt-image-1-mini"),
 		Prompt: "a minimalist line drawing of an ancient greek scroll",
 		Size:   "1024x1024",
 		ProviderOptions: map[string]any{Name: ImageOptions{
@@ -91,9 +89,8 @@ func TestLiveGenerateImage(t *testing.T) {
 }
 
 func TestLiveStructuredOutput(t *testing.T) {
-	m := NewLanguageModel(liveOpts(t)...)
+	m := New(liveOpts(t)...).LanguageModel(testenv.Get("KOINE_TEST_OPENAI_MODEL", "gpt-4.1-mini"))
 	resp, err := m.Complete(context.Background(), &koine.LanguageRequest{
-		Model:     testenv.Get("KOINE_TEST_OPENAI_MODEL", "gpt-4.1-mini"),
 		MaxTokens: 128,
 		Messages:  []koine.Message{koine.UserText("What is the capital of France?")},
 		ResponseFormat: &koine.ResponseFormat{

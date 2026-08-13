@@ -17,14 +17,14 @@ func TestLiveComplete(t *testing.T) {
 		opts = append(opts, WithBaseURL(base))
 	}
 	ctx := context.Background()
-	d, err := NewLanguageModel(ctx, opts...)
+	p, err := New(ctx, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
+	d := p.LanguageModel(model)
 
 	// Gemini thinking models spend MaxTokens on thoughts too; leave headroom.
 	resp, err := d.Complete(ctx, &koine.LanguageRequest{
-		Model:     model,
 		MaxTokens: 512,
 		Messages:  []koine.Message{koine.UserText("Reply with one word: pong")},
 	})
@@ -47,12 +47,12 @@ func TestLiveStructuredOutput(t *testing.T) {
 	if base := testenv.Get("KOINE_TEST_GEMINI_BASE_URL", ""); base != "" {
 		opts = append(opts, WithBaseURL(base))
 	}
-	m, err := NewLanguageModel(ctx, opts...)
+	p, err := New(ctx, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := m.Complete(ctx, &koine.LanguageRequest{
-		Model:     model,
+	d := p.LanguageModel(model)
+	resp, err := d.Complete(ctx, &koine.LanguageRequest{
 		MaxTokens: 512,
 		Messages:  []koine.Message{koine.UserText("What is the capital of France?")},
 		ResponseFormat: &koine.ResponseFormat{

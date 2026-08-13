@@ -15,26 +15,22 @@ type LanguageOptions struct {
 	TopK *int
 }
 
-// LanguageModel speaks the Anthropic Messages protocol. It is cheap to construct;
-// build one per credential for multi-tenant use.
+// LanguageModel speaks the Anthropic Messages protocol for one model.
 type LanguageModel struct {
+	model  string
 	client anthropic.Client
 }
 
-// NewLanguageModel builds the chat model. Without options, credentials come from the
-// environment (ANTHROPIC_API_KEY), as the official SDK defines.
-func NewLanguageModel(opts ...Option) *LanguageModel {
-	var cfg config
-	for _, o := range opts {
-		o(&cfg)
-	}
-	if cfg.client != nil {
-		return &LanguageModel{client: *cfg.client}
-	}
-	return &LanguageModel{client: anthropic.NewClient(cfg.reqOpts...)}
+var _ koine.LanguageModel = (*LanguageModel)(nil)
+
+// LanguageModel builds the chat model.
+func (p *Provider) LanguageModel(model string) *LanguageModel {
+	return &LanguageModel{model: model, client: p.client}
 }
 
-func (m *LanguageModel) Name() string { return Name }
+func (m *LanguageModel) Model() string { return m.model }
+
+func (m *LanguageModel) Provider() string { return Name }
 
 func (m *LanguageModel) Capabilities() koine.LanguageCapabilities {
 	return koine.LanguageCapabilities{Thinking: true, CacheControl: true, ParallelToolCalls: true, Images: true, StructuredOutput: true}
@@ -51,7 +47,7 @@ func (m *LanguageModel) Complete(ctx context.Context, req *koine.LanguageRequest
 
 // Stream performs one streaming Messages call.
 func (m *LanguageModel) Stream(ctx context.Context, req *koine.LanguageRequest) (*koine.LanguageStream, error) {
-	params, err := encodeRequest(req)
+	params, err := encodeRequest(m.model, req)
 	if err != nil {
 		return nil, wrapErr(err)
 	}

@@ -46,8 +46,7 @@ var streamFixture = []string{
 }
 
 func TestAssistantImageDropped(t *testing.T) {
-	params, _, err := encodeRequest(&koine.LanguageRequest{
-		Model: "gpt-4o",
+	params, _, err := encodeRequest("gpt-4o", &koine.LanguageRequest{
 		Messages: []koine.Message{
 			koine.UserText("draw a cat"),
 			{Role: koine.RoleAssistant, Blocks: koine.Blocks{
@@ -68,10 +67,9 @@ func TestAssistantImageDropped(t *testing.T) {
 func TestStreamEventsAndResponse(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("deepseek-test")
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "deepseek-test",
 		Messages: []koine.Message{koine.UserText("hi")},
 	})
 	if err != nil {
@@ -140,10 +138,9 @@ func TestStreamEventsAndResponse(t *testing.T) {
 func TestEncodeRequestWire(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
 
 	req := &koine.LanguageRequest{
-		Model:     "gpt-test",
 		System:    "be brief",
 		MaxTokens: 500,
 		Thinking:  &koine.Thinking{Effort: koine.ThinkingLow},
@@ -244,10 +241,9 @@ func TestEncodeRequestWire(t *testing.T) {
 func TestLegacyMaxTokens(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("old-compat")
 
 	req := &koine.LanguageRequest{
-		Model:           "old-compat",
 		MaxTokens:       300,
 		Messages:        []koine.Message{koine.UserText("hi")},
 		ProviderOptions: map[string]any{Name: LanguageOptions{LegacyMaxTokens: true, NoStreamUsage: true}},
@@ -282,10 +278,9 @@ func TestErrorMapping(t *testing.T) {
 		fmt.Fprint(w, `{"error":{"message":"bad key","type":"invalid_request_error","code":"invalid_api_key"}}`)
 	}))
 	defer server.Close()
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
 
 	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "gpt-test",
 		Messages: []koine.Message{koine.UserText("hi")},
 	})
 	if err != nil {
@@ -317,9 +312,8 @@ func TestThinkingWire(t *testing.T) {
 	for _, c := range cases {
 		var body json.RawMessage
 		server := sseServer(t, &body, streamFixture...)
-		d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+		d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
 		stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-			Model:    "gpt-test",
 			Thinking: c.thinking,
 			Messages: []koine.Message{koine.UserText("hi")},
 		})
@@ -342,9 +336,8 @@ func TestThinkingWire(t *testing.T) {
 	}
 
 	server := sseServer(t, new(json.RawMessage), streamFixture...)
-	d := NewLanguageModel(WithAPIKey("test"), WithBaseURL(server.URL))
+	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
 	if _, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Model:    "gpt-test",
 		Thinking: &koine.Thinking{Effort: koine.ThinkingNone, BudgetTokens: 100},
 		Messages: []koine.Message{koine.UserText("hi")},
 	}); err == nil {

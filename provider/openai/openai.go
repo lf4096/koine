@@ -18,12 +18,31 @@ import (
 // Name is the provider identifier, used in ProviderRaw and ProviderOptions.
 const Name = "openai"
 
+// Provider is a configured OpenAI-protocol endpoint. Models derive from it
+// and share its SDK client; build one Provider per credential.
+type Provider struct {
+	client openai.Client
+}
+
+// New builds a Provider. Without options, credentials come from the
+// environment (OPENAI_API_KEY), as the official SDK defines.
+func New(opts ...Option) *Provider {
+	var cfg config
+	for _, o := range opts {
+		o(&cfg)
+	}
+	if cfg.client != nil {
+		return &Provider{client: *cfg.client}
+	}
+	return &Provider{client: openai.NewClient(cfg.reqOpts...)}
+}
+
 type config struct {
 	reqOpts []option.RequestOption
 	client  *openai.Client
 }
 
-// Option configures a model constructor.
+// Option configures a Provider.
 type Option func(*config)
 
 // WithAPIKey sets the API key.
@@ -44,17 +63,6 @@ func WithHTTPClient(hc *http.Client) Option {
 // WithClient injects a preconfigured SDK client, overriding all other options.
 func WithClient(client openai.Client) Option {
 	return func(c *config) { c.client = &client }
-}
-
-func newClient(opts []Option) openai.Client {
-	var cfg config
-	for _, o := range opts {
-		o(&cfg)
-	}
-	if cfg.client != nil {
-		return *cfg.client
-	}
-	return openai.NewClient(cfg.reqOpts...)
 }
 
 func wrapErr(err error) error {

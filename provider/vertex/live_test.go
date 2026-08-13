@@ -24,12 +24,12 @@ func liveOpts(t *testing.T) []Option {
 }
 
 func TestLiveEmbed(t *testing.T) {
-	m, err := NewEmbeddingModel(context.Background(), liveOpts(t)...)
+	p, err := New(context.Background(), liveOpts(t)...)
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.EmbeddingModel(testenv.Get("KOINE_TEST_VERTEX_EMBED_MODEL", "gemini-embedding-001"))
 	resp, err := m.Embed(context.Background(), &koine.EmbedRequest{
-		Model:  testenv.Get("KOINE_TEST_VERTEX_EMBED_MODEL", "gemini-embedding-001"),
 		Inputs: []string{"the common tongue", "one tongue for every LLM"},
 		Task:   koine.EmbedTaskDocument,
 	})
@@ -42,12 +42,12 @@ func TestLiveEmbed(t *testing.T) {
 }
 
 func TestLiveGenerateImage(t *testing.T) {
-	m, err := NewImageModel(context.Background(), liveOpts(t)...)
+	p, err := New(context.Background(), liveOpts(t)...)
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := p.ImageModel(testenv.Get("KOINE_TEST_VERTEX_IMAGE_MODEL", "imagen-4.0-fast-generate-001"))
 	resp, err := m.GenerateImage(context.Background(), &koine.ImageRequest{
-		Model:       testenv.Get("KOINE_TEST_VERTEX_IMAGE_MODEL", "imagen-4.0-fast-generate-001"),
 		Prompt:      "a minimalist line drawing of an ancient greek scroll",
 		AspectRatio: "1:1",
 	})

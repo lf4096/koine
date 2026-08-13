@@ -2,16 +2,16 @@ package koine
 
 import "context"
 
-// EmbeddingModel turns text into vectors for one provider. Implementations
+// EmbeddingModel turns text into vectors for one model. Implementations
 // only translate formats; transport stays in the provider SDK underneath.
 type EmbeddingModel interface {
-	Name() string
+	Model() string
+	Provider() string
 	Embed(ctx context.Context, req *EmbedRequest) (*EmbedResponse, error)
 }
 
 // EmbedRequest is one embedding call over a batch of inputs.
 type EmbedRequest struct {
-	Model  string
 	Inputs []string
 	// Dimensions truncates the output vector where the model supports it.
 	// 0 = model default.
@@ -39,7 +39,7 @@ const (
 type EmbedResponse struct {
 	Embeddings []Embedding `json:"embeddings"`
 	Usage      Usage       `json:"usage"`
-	// Model is the provider-reported model when returned, else the requested.
+	// Model is the provider-reported model when returned, else the bound model.
 	Model    string `json:"model,omitempty"`
 	Provider string `json:"provider,omitempty"`
 }

@@ -216,7 +216,8 @@ type fakeModel struct {
 	resp   *koine.LanguageResponse
 }
 
-func (f *fakeModel) Name() string { return "fake" }
+func (f *fakeModel) Model() string    { return "fake-model" }
+func (f *fakeModel) Provider() string { return "fake" }
 func (f *fakeModel) Capabilities() koine.LanguageCapabilities {
 	return koine.LanguageCapabilities{}
 }
@@ -236,7 +237,7 @@ func TestComplete(t *testing.T) {
 		events: []koine.Event{{Type: koine.EventTextDelta, Text: "x"}},
 		resp:   &koine.LanguageResponse{StopReason: koine.StopEndTurn},
 	}
-	resp, err := d.Complete(context.Background(), &koine.LanguageRequest{Model: "m"})
+	resp, err := d.Complete(context.Background(), &koine.LanguageRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}

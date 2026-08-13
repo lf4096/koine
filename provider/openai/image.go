@@ -30,15 +30,20 @@ type ImageOptions struct {
 // ImageModel generates and edits images via the OpenAI images endpoints.
 // (The SDK's openai.ImageModel is an unrelated model-id string type.)
 type ImageModel struct {
+	model  string
 	client openai.Client
 }
 
-// NewImageModel builds the image model; options as NewLanguageModel.
-func NewImageModel(opts ...Option) *ImageModel {
-	return &ImageModel{client: newClient(opts)}
+var _ koine.ImageModel = (*ImageModel)(nil)
+
+// ImageModel builds the image model.
+func (p *Provider) ImageModel(model string) *ImageModel {
+	return &ImageModel{model: model, client: p.client}
 }
 
-func (m *ImageModel) Name() string { return Name }
+func (m *ImageModel) Model() string { return m.model }
+
+func (m *ImageModel) Provider() string { return Name }
 
 // GenerateImage calls images/generations, or images/edits when input Images
 // are present. ImageRequest.AspectRatio and Seed have no OpenAI equivalent
@@ -58,7 +63,7 @@ func (m *ImageModel) GenerateImage(ctx context.Context, req *koine.ImageRequest)
 	} else {
 		params := openai.ImageGenerateParams{
 			Prompt:         req.Prompt,
-			Model:          openai.ImageModel(req.Model),
+			Model:          openai.ImageModel(m.model),
 			N:              openai.Int(n),
 			Size:           openai.ImageGenerateParamsSize(req.Size),
 			Quality:        openai.ImageGenerateParamsQuality(o.Quality),
@@ -79,7 +84,7 @@ func (m *ImageModel) GenerateImage(ctx context.Context, req *koine.ImageRequest)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
-	return decodeImages(resp, req.Model)
+	return decodeImages(resp, m.model)
 }
 
 func (m *ImageModel) edit(ctx context.Context, req *koine.ImageRequest, o ImageOptions, n int64) (*openai.ImagesResponse, error) {
@@ -93,7 +98,7 @@ func (m *ImageModel) edit(ctx context.Context, req *koine.ImageRequest, o ImageO
 	params := openai.ImageEditParams{
 		Image:  openai.ImageEditParamsImageUnion{OfFileArray: files},
 		Prompt: req.Prompt,
-		Model:  openai.ImageModel(req.Model),
+		Model:  openai.ImageModel(m.model),
 		N:      openai.Int(n),
 		Size:   openai.ImageEditParamsSize(req.Size),
 	}
