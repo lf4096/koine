@@ -306,7 +306,7 @@ func (a *accumulator) addResponse(resp *genai.GenerateContentResponse) {
 	}
 	if u := resp.UsageMetadata; u != nil {
 		a.usage = koine.Usage{
-			InputTokens:     int(u.PromptTokenCount),
+			InputTokens:     int(max(u.PromptTokenCount-u.CachedContentTokenCount, 0)),
 			OutputTokens:    int(u.CandidatesTokenCount + u.ThoughtsTokenCount),
 			CacheReadTokens: int(u.CachedContentTokenCount),
 			ReasoningTokens: int(u.ThoughtsTokenCount),

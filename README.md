@@ -184,7 +184,7 @@ Maps to each provider's native mechanism: OpenAI `response_format: json_schema` 
 req.CacheRetention = koine.CacheShort // Anthropic: 5m TTL; koine.CacheLong: 1h
 ```
 
-On Anthropic this sets a top-level `cache_control`, caching the whole prefix up to the last block. OpenAI and Gemini cache automatically and ignore the knob. Cache accounting is always visible: `Usage.CacheReadTokens` and `Usage.CacheWriteTokens`.
+On Anthropic this sets a top-level `cache_control`, caching the whole prefix up to the last block. OpenAI and Gemini cache automatically and ignore the knob. Cache accounting is always visible: `Usage.CacheReadTokens` and `Usage.CacheWriteTokens`, and `Usage.InputTokens` excludes cache hits on every provider.
 
 ### Capabilities
 
@@ -302,6 +302,8 @@ if koine.Retryable(err) {
 	// back off and retry
 }
 ```
+
+`koine.ContextOverflow(err)` reports a prompt that does not fit the model's context window, whichever way the provider phrases it (OpenAI's `context_length_exceeded`, Anthropic's "prompt is too long", Gemini's input-token limit). Callers compact the conversation and retry instead of backing off.
 
 For the full details (status, provider code), unwrap with `errors.AsType[*koine.Error](err)`.
 

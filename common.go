@@ -22,8 +22,9 @@ type ImageBlock struct {
 
 func (*ImageBlock) BlockType() BlockType { return BlockImage }
 
-// Usage is normalized token accounting for one call. Cache fields separate
-// read hits from writes because their costs differ.
+// Usage is normalized token accounting for one call. InputTokens excludes
+// cache reads and writes on every provider; the cache fields separate read
+// hits from writes because their costs differ.
 type Usage struct {
 	InputTokens      int `json:"input_tokens"`
 	OutputTokens     int `json:"output_tokens"`

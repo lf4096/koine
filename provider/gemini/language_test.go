@@ -96,7 +96,7 @@ func TestStreamEventsAndResponse(t *testing.T) {
 	if resp == nil {
 		t.Fatal("nil response")
 	}
-	wantUsage := koine.Usage{InputTokens: 7, OutputTokens: 10, CacheReadTokens: 1, ReasoningTokens: 6}
+	wantUsage := koine.Usage{InputTokens: 6, OutputTokens: 10, CacheReadTokens: 1, ReasoningTokens: 6}
 	if resp.Usage != wantUsage {
 		t.Errorf("usage = %#v", resp.Usage)
 	}

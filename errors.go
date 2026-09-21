@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // Error is the normalized failure surface across providers. The underlying
@@ -42,6 +43,41 @@ func (e *Error) Retryable() bool {
 func Retryable(err error) bool {
 	if kerr, ok := errors.AsType[*Error](err); ok {
 		return kerr.Retryable()
+	}
+	return false
+}
+
+// ContextOverflow reports whether the provider rejected the request because
+// the prompt does not fit the model's context window. It classifies by the
+// provider code (OpenAI) or by the message text (Anthropic, Gemini, Vertex,
+// and OpenAI-compatible gateways).
+func (e *Error) ContextOverflow() bool {
+	if e.Code == "context_length_exceeded" {
+		return true
+	}
+	message := strings.ToLower(e.Message)
+	for _, marker := range contextOverflowMarkers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+var contextOverflowMarkers = []string{
+	"prompt is too long",
+	"exceed context limit",
+	"maximum context length",
+	"exceeds the maximum number of input tokens",
+	"but the model supports up to",
+	"input is too long for requested model",
+}
+
+// ContextOverflow reports whether err is a context-window overflow. It
+// unwraps to *Error, so callers need no type assertion.
+func ContextOverflow(err error) bool {
+	if kerr, ok := errors.AsType[*Error](err); ok {
+		return kerr.ContextOverflow()
 	}
 	return false
 }

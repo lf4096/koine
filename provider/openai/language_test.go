@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/openai/openai-go/v3"
+
 	"github.com/lf4096/koine"
 )
 
@@ -113,7 +115,7 @@ func TestStreamEventsAndResponse(t *testing.T) {
 	if resp == nil {
 		t.Fatal("nil response")
 	}
-	wantUsage := koine.Usage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: 2, ReasoningTokens: 3}
+	wantUsage := koine.Usage{InputTokens: 8, OutputTokens: 5, CacheReadTokens: 2, ReasoningTokens: 3}
 	if resp.Usage != wantUsage {
 		t.Errorf("usage = %#v", resp.Usage)
 	}
@@ -268,6 +270,19 @@ func TestLegacyMaxTokens(t *testing.T) {
 	}
 	if _, ok := wire["stream_options"]; ok {
 		t.Error("stream_options must be absent with NoStreamUsage")
+	}
+}
+
+func TestDecodeUsageCacheExceedsPrompt(t *testing.T) {
+	usage, ok := decodeUsage(openai.CompletionUsage{
+		PromptTokens:        50,
+		PromptTokensDetails: openai.CompletionUsagePromptTokensDetails{CachedTokens: 12000},
+	})
+	if !ok {
+		t.Fatal("decodeUsage() ok = false, want true")
+	}
+	if usage.InputTokens != 0 || usage.CacheReadTokens != 12000 {
+		t.Errorf("usage = %#v, want InputTokens 0 and CacheReadTokens 12000", usage)
 	}
 }
 

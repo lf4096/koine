@@ -313,7 +313,7 @@ func decodeUsage(u openai.CompletionUsage) (koine.Usage, bool) {
 		return koine.Usage{}, false
 	}
 	return koine.Usage{
-		InputTokens:     int(u.PromptTokens),
+		InputTokens:     int(max(u.PromptTokens-u.PromptTokensDetails.CachedTokens, 0)),
 		OutputTokens:    int(u.CompletionTokens),
 		CacheReadTokens: int(u.PromptTokensDetails.CachedTokens),
 		ReasoningTokens: int(u.CompletionTokensDetails.ReasoningTokens),
