@@ -263,107 +263,19 @@ func TestTranscribe(t *testing.T) {
 	}
 }
 
-func TestResponseFormatWire(t *testing.T) {
-	var body json.RawMessage
-	server := sseServer(t, &body, streamFixture...)
-	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
+func TestTranscribeDetectedLanguages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"text":"bonjour","languages":[{"code":"fr"},{"code":"en"}]}`)
+	}))
+	defer server.Close()
+	m := New(WithAPIKey("test"), WithBaseURL(server.URL)).TranscriptionModel("gpt-transcribe")
 
-	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Messages: []koine.Message{koine.UserText("hi")},
-		ResponseFormat: &koine.ResponseFormat{
-			Schema:      map[string]any{"type": "object", "properties": map[string]any{"answer": map[string]any{"type": "string"}}},
-			Description: "the answer",
-			Strict:      true,
-		},
-	})
+	resp, err := m.Transcribe(context.Background(), &koine.TranscriptionRequest{Audio: []byte("RIFFdata"), MIMEType: "audio/wav"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for stream.Next() {
-	}
-	stream.Close()
-
-	var wire struct {
-		ResponseFormat struct {
-			Type       string `json:"type"`
-			JSONSchema struct {
-				Name        string         `json:"name"`
-				Description string         `json:"description"`
-				Strict      bool           `json:"strict"`
-				Schema      map[string]any `json:"schema"`
-			} `json:"json_schema"`
-		} `json:"response_format"`
-	}
-	if err := json.Unmarshal(body, &wire); err != nil {
-		t.Fatal(err)
-	}
-	rf := wire.ResponseFormat
-	if rf.Type != "json_schema" || rf.JSONSchema.Name != "response" || !rf.JSONSchema.Strict || rf.JSONSchema.Description != "the answer" || rf.JSONSchema.Schema["type"] != "object" {
-		t.Errorf("response_format = %+v", rf)
-	}
-}
-
-func TestResponseFormatSchemaless(t *testing.T) {
-	var body json.RawMessage
-	server := sseServer(t, &body, streamFixture...)
-	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
-
-	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Messages:       []koine.Message{koine.UserText("hi")},
-		ResponseFormat: &koine.ResponseFormat{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for stream.Next() {
-	}
-	stream.Close()
-
-	var wire struct {
-		ResponseFormat struct {
-			Type string `json:"type"`
-		} `json:"response_format"`
-	}
-	if err := json.Unmarshal(body, &wire); err != nil {
-		t.Fatal(err)
-	}
-	if wire.ResponseFormat.Type != "json_object" {
-		t.Errorf("response_format = %+v", wire.ResponseFormat)
-	}
-}
-
-func TestToolResultJSONWire(t *testing.T) {
-	var body json.RawMessage
-	server := sseServer(t, &body, streamFixture...)
-	d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("gpt-test")
-
-	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
-		Messages: []koine.Message{
-			koine.UserText("hi"),
-			{Role: koine.RoleAssistant, Blocks: koine.Blocks{
-				&koine.ToolUseBlock{ID: "call_1", Name: "get_weather", Input: json.RawMessage(`{}`)},
-			}},
-			koine.ToolResultJSON("call_1", json.RawMessage(`{"temp":22}`), false),
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for stream.Next() {
-	}
-	stream.Close()
-
-	var wire struct {
-		Messages []struct {
-			Role    string `json:"role"`
-			Content any    `json:"content"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(body, &wire); err != nil {
-		t.Fatal(err)
-	}
-	last := wire.Messages[len(wire.Messages)-1]
-	if last.Role != "tool" || last.Content != `{"temp":22}` {
-		t.Errorf("tool message = %+v", last)
+	if resp.Language != "fr" {
+		t.Errorf("language = %q, want fr", resp.Language)
 	}
 }

@@ -9,7 +9,6 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/lf4096/koine"
 	"github.com/lf4096/koine/internal/genaiengine"
 )
 
@@ -38,7 +37,7 @@ func New(ctx context.Context, opts ...Option) (*Provider, error) {
 		var err error
 		client, err = genai.NewClient(ctx, &cfg.clientCfg)
 		if err != nil {
-			return nil, &koine.Error{Provider: Name, Message: err.Error(), Err: err}
+			return nil, genaiengine.ClientError(Name, err)
 		}
 	}
 	return &Provider{e: genaiengine.Engine{Client: client, Name: Name, AcceptRaw: acceptRaw}}, nil
@@ -66,6 +65,12 @@ func WithAPIKey(key string) Option {
 // WithBaseURL points the provider at a Gemini-compatible endpoint.
 func WithBaseURL(url string) Option {
 	return func(c *config) { c.clientCfg.HTTPOptions.BaseURL = url }
+}
+
+// WithRetry retries failed requests with backoff; the zero value takes the
+// SDK defaults. Without it the SDK sends each request once.
+func WithRetry(opts genai.HTTPRetryOptions) Option {
+	return func(c *config) { c.clientCfg.HTTPOptions.RetryOptions = &opts }
 }
 
 // WithHTTPClient sets the underlying HTTP client.

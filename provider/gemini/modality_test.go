@@ -70,53 +70,6 @@ func TestEmbed(t *testing.T) {
 	}
 }
 
-func TestGenerateImage(t *testing.T) {
-	var body json.RawMessage
-	var path string
-	png := []byte{0x89, 'P', 'N', 'G'}
-	server := jsonServer(t, &body, &path, `{
-		"predictions":[
-			{"bytesBase64Encoded":"`+base64.StdEncoding.EncodeToString(png)+`","mimeType":"image/png"},
-			{"raiFilteredReason":"safety"}
-		]
-	}`)
-	p, err := New(context.Background(), WithAPIKey("test"), WithBaseURL(server.URL))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := p.ImageModel("imagen-4.0-generate-001")
-
-	resp, err := m.GenerateImage(context.Background(), &koine.ImageRequest{
-		Prompt:      "a cat",
-		N:           2,
-		AspectRatio: "16:9",
-		ProviderOptions: map[string]any{Name: ImageOptions{
-			IncludeRAIReason: true,
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(path, "imagen-4.0-generate-001:predict") {
-		t.Errorf("path = %q", path)
-	}
-	wireStr := string(body)
-	for _, want := range []string{`"a cat"`, `"sampleCount":2`, `"aspectRatio":"16:9"`, `"includeRaiReason":true`} {
-		if !strings.Contains(wireStr, want) {
-			t.Errorf("wire missing %s:\n%s", want, wireStr)
-		}
-	}
-	if len(resp.Results) != 2 {
-		t.Fatalf("results = %+v", resp.Results)
-	}
-	if img := resp.Results[0].Image; img == nil || !reflect.DeepEqual(img.Data, png) || img.MIMEType != "image/png" {
-		t.Errorf("image = %+v", resp.Results[0].Image)
-	}
-	if r := resp.Results[1]; !r.Filtered || r.FilterReason != "safety" || r.Image != nil {
-		t.Errorf("filtered result = %+v", r)
-	}
-}
-
 func TestGenerateSpeech(t *testing.T) {
 	var body json.RawMessage
 	var path string

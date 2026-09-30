@@ -27,6 +27,7 @@ type LanguageModel interface {
 // degrade before sending a request the provider would reject or silently
 // ignore.
 type LanguageCapabilities struct {
+	StopSequences     bool
 	Thinking          bool
 	CacheControl      bool
 	ParallelToolCalls bool
@@ -48,7 +49,9 @@ type LanguageRequest struct {
 	TopP        *float64
 	// StopSequences end generation as soon as the model emits any of them.
 	// The matched sequence is excluded from the output, and the response
-	// reports StopStopSequence.
+	// reports StopStopSequence. Providers without stop sequences
+	// (Capabilities().StopSequences false) return an error rather than
+	// dropping them.
 	StopSequences []string
 	// Thinking enables reasoning. nil leaves the provider default (usually off).
 	Thinking *Thinking

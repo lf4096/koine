@@ -16,18 +16,20 @@ Five model interfaces, four protocol providers. Each modality is its own narrow 
 |---|---|---|---|---|
 | `LanguageModel` (chat) | ✓ | ✓ | ✓ | ✓ |
 | `EmbeddingModel` | ✓ | ✓ | ✓ | — |
-| `ImageModel` | ✓ generate + edit | ✓ Imagen | ✓ Imagen | — |
+| `ImageModel` | ✓ generate + edit | — | — | — |
 | `SpeechModel` (TTS) | ✓ | ✓ | ✓ | — |
 | `TranscriptionModel` (STT) | ✓ | — | — | — |
 
 The four providers are protocol adapters, not per-vendor bindings, so they cover the real model landscape:
 
 - **`anthropic`** — the Anthropic Messages protocol (Claude).
-- **`openai`** — the OpenAI protocol: OpenAI itself plus every OpenAI-compatible endpoint (DeepSeek, Kimi, Qwen, GLM, ...), including their `reasoning_content` thinking extension.
+- **`openai`** — the OpenAI protocol: OpenAI itself plus every OpenAI-compatible endpoint (DeepSeek, Kimi, Qwen, GLM, ...).
 - **`gemini`** — the Gemini API.
 - **`vertex`** — the same wire format as gemini, spoken through Vertex AI paths and auth (GCP credentials, express API keys, or self-authenticating gateways). Raw blocks replay across gemini and vertex without loss.
 
-Construction is two-layered: `New(...)` in each provider package builds a provider holding credentials, endpoint, and one SDK client, and models derive from it by name — `openai.New().LanguageModel("gpt-4.1-mini")`, or `p, err := vertex.New(ctx, vertex.WithProject("my-project"), vertex.WithLocation("global"))` then `p.ImageModel("imagen-4.0-generate-001")`. gemini and vertex take a `ctx` and return an error because their SDK builds the client eagerly; deriving a model never fails. Without options, credentials come from the environment exactly as the official SDK defines (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, Application Default Credentials).
+Construction is two-layered: `New(...)` in each provider package builds a provider holding credentials, endpoint, and one SDK client, and models derive from it by name — `openai.New().LanguageModel("gpt-4.1-mini")`, or `p, err := vertex.New(ctx, vertex.WithProject("my-project"), vertex.WithLocation("global"))` then `p.EmbeddingModel("gemini-embedding-001")`. gemini and vertex take a `ctx` and return an error because their SDK builds the client eagerly; deriving a model never fails. Without options, credentials come from the environment exactly as the official SDK defines (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, Application Default Credentials).
+
+The `openai` provider derives language models over two protocols: `p.LanguageModel(model)` speaks the Responses API, and `p.ChatCompletionsModel(model)` speaks Chat Completions for endpoints that do not serve Responses. `LanguageModel` rejects `StopSequences`, which the Responses API lacks.
 
 ## Why koine
 
@@ -149,10 +151,10 @@ Messages are block lists, Anthropic-style — the most agent-complete shape of t
 | `TextBlock` | `Text`, `Raw` | `Raw` set when the provider attaches metadata to text (Gemini thought signatures) |
 | `ThinkingBlock` | `Text`, `Signature`, `Redacted`, `Raw` | replayable only via `Raw` on the same provider; dropped cross-provider |
 | `ToolUseBlock` | `ID`, `Name`, `Input`, `Raw` | `Input` is raw JSON as the model produced it — validate before use |
-| `ToolResultBlock` | `ToolUseID`, `Content`, `Result`, `IsError` | lives in `RoleTool` messages; `Result` carries a structured JSON payload, delivered as a native object where the protocol takes one; `Content` images ride only where the protocol accepts them (Anthropic) — others error |
-| `ImageBlock` | `MIMEType`, `Data`, `URL` | inline bytes or URL |
+| `ToolResultBlock` | `ToolUseID`, `Content`, `Result`, `IsError` | lives in `RoleTool` messages; `Result` carries a structured JSON payload, delivered as a native object where the protocol takes one; `Content` images ride only where the protocol accepts them (Anthropic, OpenAI Responses) — others error |
+| `ImageBlock` | `MIMEType`, `Data`, `URL`, `Raw` | inline bytes or URL; `Raw` set when the provider attaches metadata to an image (Gemini thought signatures) |
 
-Roles are `user`, `assistant`, and `tool`. Providers reshape the tool role to each protocol's native form: Anthropic merges tool messages into user turns with `tool_result` blocks, OpenAI fans them out to `role:"tool"` messages, Gemini converts them to `functionResponse` parts.
+Roles are `user`, `assistant`, and `tool`. Providers reshape the tool role to each protocol's native form: Anthropic merges tool messages into user turns with `tool_result` blocks, OpenAI sends them as `function_call_output` items (`role:"tool"` messages on Chat Completions), Gemini converts them to `functionResponse` parts.
 
 The whole model marshals to JSON with type discriminators, so a `[]koine.Message` is also a session persistence format.
 
@@ -162,7 +164,7 @@ The whole model marshals to JSON with type discriminators, so a `[]koine.Message
 req.Thinking = &koine.Thinking{Effort: koine.ThinkingHigh}
 ```
 
-One normalized effort scale (`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`) plus a token budget. Each provider sends its native dial and converts the other: `reasoning_effort` on OpenAI, a token budget on Anthropic, `thinkingLevel` or `thinkingBudget` on Gemini. On Gemini, `Effort` maps to `thinkingLevel`, which needs Gemini 3; pass `BudgetTokens` for Gemini 2.x models, which reject it. `ThinkingNone` disables reasoning; models that cannot switch it off reject the request. For full control of Gemini's native knobs, pass `gemini.LanguageOptions{ThinkingConfig: ...}` (or `vertex.LanguageOptions`, the same type), which replaces the normalized mapping.
+One normalized effort scale (`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`) plus a token budget. Each provider sends its native dial and converts the other: `reasoning.effort` on OpenAI (`reasoning_effort` on Chat Completions), a token budget on Anthropic, `thinkingLevel` or `thinkingBudget` on Gemini. On Gemini, `Effort` maps to `thinkingLevel`, which needs Gemini 3; pass `BudgetTokens` for Gemini 2.x models, which reject it. `ThinkingNone` disables reasoning; models that cannot switch it off reject the request. For full control of Gemini's native knobs, pass `gemini.LanguageOptions{ThinkingConfig: ...}` (or `vertex.LanguageOptions`, the same type), which replaces the normalized mapping. `anthropic.LanguageOptions{Thinking: ...}` does the same on Anthropic, with `Effort` for `output_config.effort`.
 
 ### Structured output
 
@@ -176,7 +178,7 @@ req.ResponseFormat = &koine.ResponseFormat{
 }
 ```
 
-Maps to each provider's native mechanism: OpenAI `response_format: json_schema` (set `Strict: true` for enforced adherence — schema subset rules apply), Anthropic `output_config`, Gemini `responseJsonSchema`. An empty `Schema` requests schemaless JSON mode where the provider has one. Providers that cannot express the constraint return an error instead of silently dropping it; check `Capabilities().StructuredOutput` to fall back to a forced tool call (`ToolChoice` + a tool whose `InputSchema` is your output schema). One protocol constraint to know: Gemini rejects `ResponseFormat` combined with `Tools`.
+Maps to each provider's native mechanism: OpenAI `text.format: json_schema` (`response_format` on Chat Completions; set `Strict: true` for enforced adherence — schema subset rules apply), Anthropic `output_config`, Gemini `responseJsonSchema`. An empty `Schema` requests schemaless JSON mode where the provider has one. Providers that cannot express the constraint return an error instead of silently dropping it; check `Capabilities().StructuredOutput` to fall back to a forced tool call (`ToolChoice` + a tool whose `InputSchema` is your output schema). One protocol constraint to know: Gemini rejects `ResponseFormat` combined with `Tools`.
 
 ### Prompt caching
 
@@ -188,7 +190,7 @@ On Anthropic this sets a top-level `cache_control`, caching the whole prefix up 
 
 ### Capabilities
 
-`Capabilities()` reports what a provider can express (`Thinking`, `CacheControl`, `ParallelToolCalls`, `Images`, `StructuredOutput`), so a loop can degrade before sending a request the provider would reject.
+`Capabilities()` reports what a provider can express (`StopSequences`, `Thinking`, `CacheControl`, `ParallelToolCalls`, `Images`, `StructuredOutput`), so a loop can degrade before sending a request the provider would reject.
 
 ## Embedding models
 
@@ -232,7 +234,7 @@ resp, err := im.GenerateImage(ctx, &koine.ImageRequest{
 })
 ```
 
-Editing is OpenAI-only today — gemini and vertex (Imagen) return an error rather than silently generating from scratch. Per-image metadata survives normalization: `RevisedPrompt`, safety filtering, and the provider's raw per-image JSON in `Raw`.
+Per-image metadata survives normalization: `RevisedPrompt`, safety filtering, and the provider's raw per-image JSON in `Raw`.
 
 Chat-native image output (Gemini Flash Image) needs no `ImageModel` — it arrives as an `ImageBlock` in the chat response.
 
@@ -278,7 +280,7 @@ p := openai.New(
 m := p.LanguageModel("deepseek-chat")
 ```
 
-Every provider accepts `WithAPIKey`, `WithBaseURL`, `WithHTTPClient`, and `WithClient(...)` to inject a fully configured official SDK client (custom proxies, middleware, ...). `vertex` adds GCP-specific construction: `WithProject`/`WithLocation`/`WithCredentials` for ADC, `WithAPIKey` for express mode, or `WithBaseURL`+`WithAPIVersion`+`WithHeader` for bearer-token gateways that proxy Vertex paths.
+Every provider accepts `WithAPIKey`, `WithBaseURL`, `WithHTTPClient`, and `WithClient(...)` to inject a fully configured official SDK client (custom proxies, middleware, ...). `vertex` adds GCP-specific construction: `WithProject`/`WithLocation`/`WithCredentials` for ADC, `WithAPIKey` for express mode, or `WithBaseURL`+`WithAPIVersion`+`WithHeader` for bearer-token gateways that proxy Vertex paths. gemini and vertex also take `WithRetry`, since their SDK does not retry by default.
 
 ## Provider options
 
@@ -287,7 +289,7 @@ Portable fields live on the request types; everything provider-specific rides `P
 ```go
 req.ProviderOptions = map[string]any{
 	openai.Name: openai.LanguageOptions{
-		LegacyMaxTokens: true,                                    // older compat endpoints
+		LegacyMaxTokens: true,                                    // older Chat Completions endpoints
 		ExtraBody:       map[string]any{"enable_thinking": true}, // vendor extensions
 	},
 }

@@ -12,7 +12,6 @@ import (
 	"cloud.google.com/go/auth"
 	"google.golang.org/genai"
 
-	"github.com/lf4096/koine"
 	"github.com/lf4096/koine/internal/genaiengine"
 )
 
@@ -37,19 +36,12 @@ func New(ctx context.Context, opts ...Option) (*Provider, error) {
 	for _, o := range opts {
 		o(&cfg)
 	}
-	cc := &cfg.clientCfg
-	if cc.APIKey != "" && (cc.Project != "" || cc.Location != "" || cc.Credentials != nil) {
-		return nil, &koine.Error{
-			Provider: Name,
-			Message:  "WithAPIKey (express mode) is mutually exclusive with WithProject/WithLocation/WithCredentials",
-		}
-	}
 	client := cfg.client
 	if client == nil {
 		var err error
-		client, err = genai.NewClient(ctx, cc)
+		client, err = genai.NewClient(ctx, &cfg.clientCfg)
 		if err != nil {
-			return nil, &koine.Error{Provider: Name, Message: err.Error(), Err: err}
+			return nil, genaiengine.ClientError(Name, err)
 		}
 	}
 	return &Provider{e: genaiengine.Engine{
@@ -75,7 +67,7 @@ type config struct {
 // Option configures a Provider.
 type Option func(*config)
 
-// WithProject sets the GCP project id. Mutually exclusive with WithAPIKey.
+// WithProject sets the GCP project id.
 func WithProject(id string) Option {
 	return func(c *config) { c.clientCfg.Project = id }
 }
@@ -91,9 +83,9 @@ func WithCredentials(creds *auth.Credentials) Option {
 	return func(c *config) { c.clientCfg.Credentials = creds }
 }
 
-// WithAPIKey enables Vertex express mode: the key is sent as x-goog-api-key
-// and no project/location is used. Mutually exclusive with WithProject,
-// WithLocation, and WithCredentials.
+// WithAPIKey sends the key as x-goog-api-key instead of Google credentials.
+// Alone it enables Vertex express mode; with WithProject and WithLocation the
+// calls use project-scoped paths. Mutually exclusive with WithCredentials.
 func WithAPIKey(key string) Option {
 	return func(c *config) { c.clientCfg.APIKey = key }
 }
@@ -122,6 +114,12 @@ func WithHeader(key, value string) Option {
 		}
 		c.clientCfg.HTTPOptions.Headers.Set(key, value)
 	}
+}
+
+// WithRetry retries failed requests with backoff; the zero value takes the
+// SDK defaults. Without it the SDK sends each request once.
+func WithRetry(opts genai.HTTPRetryOptions) Option {
+	return func(c *config) { c.clientCfg.HTTPOptions.RetryOptions = &opts }
 }
 
 // WithHTTPClient sets the underlying HTTP client.

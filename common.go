@@ -13,11 +13,13 @@ type ProviderRaw struct {
 
 // ImageBlock is image content, either inline bytes or a URL (set one). It
 // appears as message content on language models and as input and output on
-// image models.
+// image models. Raw is set when the provider attaches opaque metadata to an
+// image (Gemini thought signatures ride on image parts).
 type ImageBlock struct {
-	MIMEType string `json:"mime_type,omitempty"`
-	Data     []byte `json:"data,omitempty"`
-	URL      string `json:"url,omitempty"`
+	MIMEType string       `json:"mime_type,omitempty"`
+	Data     []byte       `json:"data,omitempty"`
+	URL      string       `json:"url,omitempty"`
+	Raw      *ProviderRaw `json:"raw,omitempty"`
 }
 
 func (*ImageBlock) BlockType() BlockType { return BlockImage }

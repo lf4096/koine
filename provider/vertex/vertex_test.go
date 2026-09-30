@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"cloud.google.com/go/auth"
+	"google.golang.org/genai"
+
 	"github.com/lf4096/koine"
 )
 
@@ -127,10 +130,68 @@ func TestEmbedSplitsBatch(t *testing.T) {
 	}
 }
 
-func TestExpressModeExclusiveWithProject(t *testing.T) {
-	_, err := New(context.Background(), WithAPIKey("k"), WithProject("p"))
-	kerr, ok := errors.AsType[*koine.Error](err)
-	if !ok || kerr.Provider != Name || !strings.Contains(kerr.Message, "mutually exclusive") {
+func TestAPIKeyWithProject(t *testing.T) {
+	var path, key string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, key = r.URL.Path, r.Header.Get("x-goog-api-key")
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]},\"finishReason\":\"STOP\",\"index\":0}]}\r\n\r\n")
+	}))
+	defer server.Close()
+
+	p, err := New(context.Background(), WithAPIKey("k"), WithProject("p"), WithLocation("us-central1"), WithBaseURL(server.URL), WithAPIVersion("v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.LanguageModel("gemini-test").Complete(context.Background(), &koine.LanguageRequest{Messages: []koine.Message{koine.UserText("hi")}}); err != nil {
+		t.Fatal(err)
+	}
+	if path != "/v1/projects/p/locations/us-central1/publishers/google/models/gemini-test:streamGenerateContent" || key != "k" {
+		t.Errorf("path = %q, x-goog-api-key = %q", path, key)
+	}
+}
+
+func TestRetry(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests%2 == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprint(w, `{"error":{"code":503,"message":"busy","status":"UNAVAILABLE"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]},\"finishReason\":\"STOP\",\"index\":0}]}\r\n\r\n")
+	}))
+	defer server.Close()
+	zero := 0.0
+	for _, retry := range []bool{false, true} {
+		requests = 0
+		opts := []Option{WithAPIVersion("v1"), WithBaseURL(server.URL)}
+		if retry {
+			opts = append(opts, WithRetry(genai.HTTPRetryOptions{Attempts: new(int32(2)), InitialDelay: &zero, Jitter: &zero}))
+		}
+		p, err := New(context.Background(), opts...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := p.LanguageModel("gemini-test").Complete(context.Background(), &koine.LanguageRequest{Messages: []koine.Message{koine.UserText("hi")}})
+		if retry && (err != nil || resp.Message.Text() != "Hi" || requests != 2) {
+			t.Errorf("with retry: err = %v, requests = %d", err, requests)
+		}
+		if !retry && (err == nil || requests != 1) {
+			t.Errorf("without retry: err = %v, requests = %d", err, requests)
+		}
+	}
+}
+
+func TestClientErrorHidesSecrets(t *testing.T) {
+	_, err := New(context.Background(),
+		WithAPIKey("SECRET-KEY"),
+		WithCredentials(auth.NewCredentials(&auth.CredentialsOptions{})),
+		WithHeader("Authorization", "Bearer SECRET-TOKEN"),
+	)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") || strings.Contains(err.Error(), "SECRET") || errors.Unwrap(err) != nil {
 		t.Errorf("err = %v", err)
 	}
 }

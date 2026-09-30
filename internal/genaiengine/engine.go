@@ -7,6 +7,7 @@ package genaiengine
 import (
 	"errors"
 	"slices"
+	"strings"
 
 	"google.golang.org/genai"
 
@@ -28,6 +29,14 @@ type Engine struct {
 	// SplitEmbedBatch sends one embed call per input, for backends whose
 	// predict endpoint rejects multi-content requests (Vertex).
 	SplitEmbedBatch bool
+}
+
+// ClientError reports a failure to build the SDK client. The SDK appends the
+// whole ClientConfig, API key and headers included, to these errors, so the
+// text is cut there and the SDK error is not kept.
+func ClientError(provider string, err error) *koine.Error {
+	msg, _, _ := strings.Cut(err.Error(), " ClientConfig:")
+	return &koine.Error{Provider: provider, Message: msg}
 }
 
 func (e *Engine) acceptsRaw(raw *koine.ProviderRaw) bool {

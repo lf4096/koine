@@ -55,19 +55,22 @@ func encodeRequest(model string, req *koine.LanguageRequest) (anthropic.MessageN
 			}
 			if budget > 0 {
 				params.Thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
-				if params.MaxTokens <= budget {
-					params.MaxTokens += budget
-				}
 			}
 		}
 	}
+	o, _ := req.ProviderOptions[Name].(LanguageOptions)
+	if o.Thinking != nil {
+		params.Thinking = *o.Thinking
+	}
+	if e := params.Thinking.OfEnabled; e != nil && params.MaxTokens <= e.BudgetTokens {
+		params.MaxTokens += e.BudgetTokens
+	}
+	params.OutputConfig.Effort = o.Effort
 	if rf := req.ResponseFormat; rf != nil {
 		if len(rf.Schema) == 0 {
 			return anthropic.MessageNewParams{}, fmt.Errorf("ResponseFormat requires a schema")
 		}
-		params.OutputConfig = anthropic.OutputConfigParam{
-			Format: anthropic.JSONOutputFormatParam{Schema: rf.Schema},
-		}
+		params.OutputConfig.Format = anthropic.JSONOutputFormatParam{Schema: rf.Schema}
 	}
 	switch req.CacheRetention {
 	case koine.CacheShort:
@@ -96,10 +99,8 @@ func encodeRequest(model string, req *koine.LanguageRequest) (anthropic.MessageN
 			params.Messages = append(params.Messages, mp)
 		}
 	}
-	if o, ok := req.ProviderOptions[Name].(LanguageOptions); ok {
-		if o.TopK != nil {
-			params.TopK = anthropic.Int(int64(*o.TopK))
-		}
+	if o.TopK != nil {
+		params.TopK = anthropic.Int(int64(*o.TopK))
 	}
 	return params, nil
 }
@@ -312,7 +313,7 @@ func mapStopReason(r anthropic.StopReason) koine.StopReason {
 		return koine.StopEndTurn
 	case anthropic.StopReasonToolUse:
 		return koine.StopToolUse
-	case anthropic.StopReasonMaxTokens:
+	case anthropic.StopReasonMaxTokens, anthropic.StopReasonModelContextWindowExceeded:
 		return koine.StopMaxTokens
 	case anthropic.StopReasonStopSequence:
 		return koine.StopStopSequence

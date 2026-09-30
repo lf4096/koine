@@ -89,7 +89,7 @@ func TestLiveGenerateImage(t *testing.T) {
 }
 
 func TestLiveStructuredOutput(t *testing.T) {
-	m := New(liveOpts(t)...).LanguageModel(testenv.Get("KOINE_TEST_OPENAI_MODEL", "gpt-4.1-mini"))
+	m := New(liveOpts(t)...).LanguageModel(testenv.Key(t, "KOINE_TEST_OPENAI_MODEL"))
 	resp, err := m.Complete(context.Background(), &koine.LanguageRequest{
 		MaxTokens: 128,
 		Messages:  []koine.Message{koine.UserText("What is the capital of France?")},

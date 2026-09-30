@@ -74,6 +74,9 @@ func (m *TranscriptionModel) Transcribe(ctx context.Context, req *koine.Transcri
 		Model:    m.model,
 		Provider: Name,
 	}
+	if out.Language == "" && len(resp.Languages) > 0 {
+		out.Language = resp.Languages[0].Code
+	}
 	for _, s := range resp.Segments {
 		out.Segments = append(out.Segments, koine.Segment{Text: s.Text, Start: s.Start, End: s.End})
 	}

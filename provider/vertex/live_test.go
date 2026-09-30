@@ -2,6 +2,7 @@ package vertex
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/lf4096/koine"
@@ -41,20 +42,27 @@ func TestLiveEmbed(t *testing.T) {
 	}
 }
 
-func TestLiveGenerateImage(t *testing.T) {
+func TestLiveImageOutput(t *testing.T) {
 	p, err := New(context.Background(), liveOpts(t)...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := p.ImageModel(testenv.Get("KOINE_TEST_VERTEX_IMAGE_MODEL", "imagen-4.0-fast-generate-001"))
-	resp, err := m.GenerateImage(context.Background(), &koine.ImageRequest{
-		Prompt:      "a minimalist line drawing of an ancient greek scroll",
-		AspectRatio: "1:1",
-	})
+	m := p.LanguageModel(testenv.Get("KOINE_TEST_VERTEX_IMAGE_MODEL", "gemini-2.5-flash-image"))
+	req := &koine.LanguageRequest{Messages: []koine.Message{koine.UserText("Draw a small red circle on a white background.")}}
+	resp, err := m.Complete(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Results) == 0 || resp.Results[0].Image == nil || len(resp.Results[0].Image.Data) == 0 {
-		t.Fatalf("results = %+v", resp.Results)
+	if !slices.ContainsFunc(resp.Message.Blocks, func(b koine.Block) bool {
+		img, ok := b.(*koine.ImageBlock)
+		return ok && len(img.Data) > 0
+	}) {
+		t.Fatalf("no image in %#v", resp.Message.Blocks)
+	}
+	// Gemini 3 image models reject this turn unless the image's thought
+	// signature comes back with it.
+	req.Messages = append(req.Messages, resp.Message, koine.UserText("Now make the circle blue."))
+	if _, err := m.Complete(context.Background(), req); err != nil {
+		t.Fatal(err)
 	}
 }

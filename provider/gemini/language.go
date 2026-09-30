@@ -30,7 +30,7 @@ func (m *LanguageModel) Provider() string { return Name }
 func (m *LanguageModel) Capabilities() koine.LanguageCapabilities {
 	// Gemini caches implicitly; explicit cache objects are out of scope, so
 	// CacheControl stays false.
-	return koine.LanguageCapabilities{Thinking: true, ParallelToolCalls: true, Images: true, StructuredOutput: true}
+	return koine.LanguageCapabilities{StopSequences: true, Thinking: true, ParallelToolCalls: true, Images: true, StructuredOutput: true}
 }
 
 // Complete performs one generateContent call and returns the final response.

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go"
+
 	"github.com/lf4096/koine"
 )
 
@@ -49,7 +51,7 @@ var streamFixture = []string{
 	event("content_block_delta", `{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"city\":"}}`),
 	event("content_block_delta", `{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"\"SF\"}"}}`),
 	event("content_block_stop", `{"type":"content_block_stop","index":2}`),
-	event("message_delta", `{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":25,"output_tokens":42,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}}`),
+	event("message_delta", `{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":25,"output_tokens":42,"cache_creation_input_tokens":2,"cache_read_input_tokens":3,"output_tokens_details":{"thinking_tokens":7}}}`),
 	event("message_stop", `{"type":"message_stop"}`),
 }
 
@@ -102,7 +104,7 @@ func TestStreamEventsAndResponse(t *testing.T) {
 	if resp.Model != "claude-test" || resp.Provider != Name || resp.StopReason != koine.StopToolUse {
 		t.Errorf("response meta = %#v", resp)
 	}
-	wantUsage := koine.Usage{InputTokens: 25, OutputTokens: 42, CacheReadTokens: 3, CacheWriteTokens: 2}
+	wantUsage := koine.Usage{InputTokens: 25, OutputTokens: 42, CacheReadTokens: 3, CacheWriteTokens: 2, ReasoningTokens: 7}
 	if resp.Usage != wantUsage {
 		t.Errorf("usage = %#v, want %#v", resp.Usage, wantUsage)
 	}
@@ -287,6 +289,21 @@ func TestForeignThinkingDropped(t *testing.T) {
 	}
 }
 
+func TestStopReasons(t *testing.T) {
+	cases := map[string]koine.StopReason{
+		"end_turn":                      koine.StopEndTurn,
+		"max_tokens":                    koine.StopMaxTokens,
+		"model_context_window_exceeded": koine.StopMaxTokens,
+		"refusal":                       koine.StopContentFilter,
+		"something_new":                 koine.StopOther,
+	}
+	for in, want := range cases {
+		if got := mapStopReason(anthropic.StopReason(in)); got != want {
+			t.Errorf("mapStopReason(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestErrorMapping(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -437,4 +454,62 @@ func TestThinkingWire(t *testing.T) {
 	if wire.Thinking.Type != "disabled" || wire.MaxTokens != 100 {
 		t.Errorf("wire: %+v", wire)
 	}
+}
+
+func TestThinkingOverrideWire(t *testing.T) {
+	adaptive := anthropic.ThinkingConfigParamUnion{OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{Display: anthropic.ThinkingConfigAdaptiveDisplayOmitted}}
+	betweenTools := anthropic.ThinkingConfigParamUnion{OfBetweenTools: &anthropic.ThinkingConfigBetweenToolsParam{}}
+	enabled := anthropic.ThinkingConfigParamOfEnabled(8000)
+	cases := []struct {
+		name          string
+		maxTokens     int
+		opts          LanguageOptions
+		format        *koine.ResponseFormat
+		wantThinking  string
+		wantOutput    string
+		wantMaxTokens int
+	}{
+		{"adaptive replaces normalized thinking", 100, LanguageOptions{Thinking: &adaptive, Effort: anthropic.OutputConfigEffortXhigh}, nil, `{"type":"adaptive","display":"omitted"}`, `{"effort":"xhigh"}`, 100},
+		{"effort merges with format", 100, LanguageOptions{Thinking: &adaptive, Effort: anthropic.OutputConfigEffortLow}, &koine.ResponseFormat{Schema: map[string]any{"type": "object"}}, `{"type":"adaptive","display":"omitted"}`, `{"effort":"low","format":{"schema":{"type":"object"},"type":"json_schema"}}`, 100},
+		{"between tools", 100, LanguageOptions{Thinking: &betweenTools}, nil, `{"type":"between_tools"}`, ``, 100},
+		{"enabled budget still raises max tokens", 0, LanguageOptions{Thinking: &enabled}, nil, `{"budget_tokens":8000,"type":"enabled"}`, ``, defaultMaxTokens + 8000},
+	}
+	for _, c := range cases {
+		var body json.RawMessage
+		server := sseServer(t, &body, streamFixture...)
+		d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
+		stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
+			MaxTokens:       c.maxTokens,
+			Thinking:        &koine.Thinking{Effort: koine.ThinkingHigh},
+			ResponseFormat:  c.format,
+			Messages:        []koine.Message{koine.UserText("hi")},
+			ProviderOptions: map[string]any{Name: c.opts},
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		for stream.Next() {
+		}
+		stream.Close()
+
+		var wire struct {
+			Thinking     json.RawMessage `json:"thinking"`
+			OutputConfig json.RawMessage `json:"output_config"`
+			MaxTokens    int             `json:"max_tokens"`
+		}
+		if err := json.Unmarshal(body, &wire); err != nil {
+			t.Fatalf("%s: decode wire: %v", c.name, err)
+		}
+		if !jsonEqual(wire.Thinking, c.wantThinking) || !jsonEqual(wire.OutputConfig, c.wantOutput) || wire.MaxTokens != c.wantMaxTokens {
+			t.Errorf("%s: thinking = %s, output_config = %s, max_tokens = %d", c.name, wire.Thinking, wire.OutputConfig, wire.MaxTokens)
+		}
+	}
+}
+
+func jsonEqual(got json.RawMessage, want string) bool {
+	if len(got) == 0 || want == "" {
+		return len(got) == 0 && want == ""
+	}
+	var g, w any
+	return json.Unmarshal(got, &g) == nil && json.Unmarshal([]byte(want), &w) == nil && reflect.DeepEqual(g, w)
 }

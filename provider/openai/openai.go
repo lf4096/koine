@@ -1,16 +1,18 @@
 // Package openai implements koine providers for the OpenAI API, on top of the
-// official openai-go SDK: Chat Completions plus the embedding, image, speech,
-// and transcription endpoints. With a custom base URL the chat surface covers
-// every OpenAI-compatible endpoint (DeepSeek, Kimi, Qwen, GLM, ...),
-// including their reasoning_content thinking extension.
+// official openai-go SDK: the Responses API and Chat Completions for language
+// models, plus the embedding, image, speech, and transcription endpoints.
+// With a custom base URL it covers every OpenAI-compatible endpoint (DeepSeek,
+// Kimi, Qwen, GLM, ...).
 package openai
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/ssestream"
 
 	"github.com/lf4096/koine"
 )
@@ -73,6 +75,19 @@ func wrapErr(err error) error {
 			Code:     apierr.Code,
 			Message:  apierr.Message,
 			Err:      err,
+		}
+	}
+	// The SDK stops at any streamed event carrying an "error" object and keeps
+	// the provider's code and message only in the raw event.
+	if serr, ok := errors.AsType[*ssestream.StreamError](err); ok {
+		var event struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(serr.Event.Data, &event) == nil && event.Error.Message != "" {
+			return &koine.Error{Provider: Name, Code: event.Error.Code, Message: event.Error.Message, Err: err}
 		}
 	}
 	return &koine.Error{Provider: Name, Message: err.Error(), Err: err}

@@ -173,7 +173,12 @@ func (e *Engine) encodeAssistantParts(blocks koine.Blocks, toolNames map[string]
 				Args: args,
 			}})
 		case *koine.ImageBlock:
-			parts = append(parts, imagePart(blk))
+			p := imagePart(blk)
+			if raw, ok := e.partFromRaw(blk.Raw); ok && raw.InlineData != nil && p.InlineData != nil {
+				raw.InlineData.Data = p.InlineData.Data
+				p = raw
+			}
+			parts = append(parts, p)
 		default:
 			return nil, fmt.Errorf("unsupported assistant block %q", b.BlockType())
 		}
@@ -363,10 +368,16 @@ func (a *accumulator) addOther(part *genai.Part) {
 	}
 	a.closeThinking()
 	a.closeText()
-	a.blocks = append(a.blocks, &koine.ImageBlock{
-		MIMEType: part.InlineData.MIMEType,
-		Data:     part.InlineData.Data,
-	})
+	img := &koine.ImageBlock{MIMEType: part.InlineData.MIMEType, Data: part.InlineData.Data}
+	if len(part.ThoughtSignature) > 0 {
+		// Raw keeps the part without its bytes, which Data already holds; replay
+		// puts them back.
+		raw, blob := *part, *part.InlineData
+		blob.Data = nil
+		raw.InlineData = &blob
+		img.Raw = a.rawPart(&raw)
+	}
+	a.blocks = append(a.blocks, img)
 }
 
 func (a *accumulator) closeThinking() {

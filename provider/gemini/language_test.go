@@ -276,6 +276,43 @@ func TestThinkingRawRoundTrip(t *testing.T) {
 	}
 }
 
+func TestImageSignatureRoundTrip(t *testing.T) {
+	var body json.RawMessage
+	server := sseServer(t, &body, `{"candidates":[{"content":{"role":"model","parts":[{"inlineData":{"mimeType":"image/png","data":"iVBO"},"thoughtSignature":"c2ln"}]},"finishReason":"STOP","index":0}]}`)
+	d := newTestModel(t, server.URL)
+
+	req := &koine.LanguageRequest{Messages: []koine.Message{koine.UserText("draw")}}
+	resp, err := d.Complete(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, ok := resp.Message.Blocks[0].(*koine.ImageBlock)
+	if !ok || !reflect.DeepEqual(img.Data, []byte{0x89, 'P', 'N'}) || img.Raw == nil {
+		t.Fatalf("image block = %#v", resp.Message.Blocks[0])
+	}
+	if raw := string(img.Raw.JSON); !strings.Contains(raw, `"thoughtSignature":"c2ln"`) || strings.Contains(raw, "iVBO") {
+		t.Errorf("raw = %s, want the signature without the image bytes", raw)
+	}
+
+	req.Messages = append(req.Messages, resp.Message, koine.UserText("make it blue"))
+	if _, err := d.Complete(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Contents []struct {
+			Parts []map[string]any `json:"parts"`
+		} `json:"contents"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil {
+		t.Fatal(err)
+	}
+	part := wire.Contents[1].Parts[0]
+	inline, _ := part["inlineData"].(map[string]any)
+	if part["thoughtSignature"] != "c2ln" || inline["data"] != "iVBO" || inline["mimeType"] != "image/png" {
+		t.Errorf("image part resend = %+v", part)
+	}
+}
+
 func TestToolResultWithoutMatchingCall(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)
@@ -372,5 +409,59 @@ func TestThinkingWire(t *testing.T) {
 		Messages: []koine.Message{koine.UserText("hi")},
 	}); err == nil {
 		t.Fatal("ThinkingNone with BudgetTokens: want error")
+	}
+}
+
+func TestRetry(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests%2 == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprint(w, `{"error":{"code":503,"message":"busy","status":"UNAVAILABLE"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]},\"finishReason\":\"STOP\",\"index\":0}]}\r\n\r\n")
+	}))
+	defer server.Close()
+	zero := 0.0
+	for _, retry := range []bool{false, true} {
+		requests = 0
+		opts := []Option{WithAPIKey("test"), WithBaseURL(server.URL)}
+		if retry {
+			opts = append(opts, WithRetry(genai.HTTPRetryOptions{Attempts: new(int32(2)), InitialDelay: &zero, Jitter: &zero}))
+		}
+		p, err := New(context.Background(), opts...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := p.LanguageModel("gemini-test").Complete(context.Background(), &koine.LanguageRequest{Messages: []koine.Message{koine.UserText("hi")}})
+		if retry && (err != nil || resp.Message.Text() != "Hi" || requests != 2) {
+			t.Errorf("with retry: err = %v, requests = %d", err, requests)
+		}
+		if !retry && (err == nil || requests != 1) {
+			t.Errorf("without retry: err = %v, requests = %d", err, requests)
+		}
+	}
+}
+
+func TestStreamCutShort(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, buf, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.Close()
+		chunk := "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hel\"}]},\"index\":0}]}\r\n\r\n"
+		fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n%s\r\n", len(chunk), chunk)
+		buf.Flush()
+	}))
+	defer server.Close()
+
+	_, err := newTestModel(t, server.URL).Complete(context.Background(), &koine.LanguageRequest{Messages: []koine.Message{koine.UserText("hi")}})
+	if err == nil {
+		t.Fatal("stream cut short: want error, got a response")
 	}
 }

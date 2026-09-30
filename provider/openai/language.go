@@ -1,31 +1,36 @@
 package openai
 
 import (
+	"cmp"
 	"context"
-	"encoding/json"
 	"io"
-	"strings"
 
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
 
 	"github.com/lf4096/koine"
 )
 
-// LanguageOptions carries OpenAI-compatibility request parameters. Pass it via
+// LanguageOptions carries OpenAI request parameters for both LanguageModel
+// and ChatCompletionsModel. Pass it via
 // LanguageRequest.ProviderOptions[openai.Name].
 type LanguageOptions struct {
 	// LegacyMaxTokens sends max_tokens instead of max_completion_tokens, for
-	// compatible endpoints that predate the rename.
+	// compatible endpoints that predate the rename. Chat Completions only.
 	LegacyMaxTokens bool
 	// NoStreamUsage omits stream_options.include_usage, for compatible
-	// endpoints that reject it.
+	// endpoints that reject it. Chat Completions only.
 	NoStreamUsage bool
+	// NoReasoningReplay drops thinking on replay instead of sending it back
+	// under its vendor field, for compatible endpoints that reject the field
+	// in input messages. Chat Completions only.
+	NoReasoningReplay bool
 	// ExtraBody merges additional top-level fields into the request body
 	// (e.g. vendor thinking switches like enable_thinking).
 	ExtraBody map[string]any
 }
 
-// LanguageModel speaks the OpenAI Chat Completions protocol for one model.
+// LanguageModel speaks the OpenAI Responses protocol for one model.
 type LanguageModel struct {
 	model  string
 	client openai.Client
@@ -33,7 +38,7 @@ type LanguageModel struct {
 
 var _ koine.LanguageModel = (*LanguageModel)(nil)
 
-// LanguageModel builds the chat model.
+// LanguageModel builds the chat model on the Responses API.
 func (p *Provider) LanguageModel(model string) *LanguageModel {
 	return &LanguageModel{model: model, client: p.client}
 }
@@ -48,17 +53,7 @@ func (m *LanguageModel) Capabilities() koine.LanguageCapabilities {
 	return koine.LanguageCapabilities{Thinking: true, ParallelToolCalls: true, Images: true, StructuredOutput: true}
 }
 
-// toolState assembles one streamed tool call; OpenAI deltas carry no block
-// structure, so the provider synthesizes koine block indices itself.
-type toolState struct {
-	id    string
-	name  string
-	args  strings.Builder
-	index int
-	ended bool
-}
-
-// Complete performs one Chat Completions call and returns the final response.
+// Complete performs one Responses call and returns the final response.
 func (m *LanguageModel) Complete(ctx context.Context, req *koine.LanguageRequest) (*koine.LanguageResponse, error) {
 	s, err := m.Stream(ctx, req)
 	if err != nil {
@@ -67,45 +62,21 @@ func (m *LanguageModel) Complete(ctx context.Context, req *koine.LanguageRequest
 	return s.Collect()
 }
 
-// Stream performs one streaming Chat Completions call.
+// Stream performs one streaming Responses call.
 func (m *LanguageModel) Stream(ctx context.Context, req *koine.LanguageRequest) (*koine.LanguageStream, error) {
-	params, reqOpts, err := encodeRequest(m.model, req)
+	params, reqOpts, err := encodeResponsesRequest(m.model, req)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
-	sse := m.client.Chat.Completions.NewStreaming(ctx, params, reqOpts...)
+	sse := m.client.Responses.NewStreaming(ctx, params, reqOpts...)
 
 	var (
-		acc        openai.ChatCompletionAccumulator
-		pending    []koine.Event
-		tools      = map[int64]*toolState{}
-		toolOrder  []int64
-		reasoning  strings.Builder
-		usage      koine.Usage
-		finish     string
-		blockKind  string
-		blockIndex = -1
-		stopSent   bool
+		pending []koine.Event
+		items   = map[int64]responses.ResponseOutputItemUnion{}
+		calls   = map[int64]*koine.ToolCallEvent{}
+		parts   = map[int64]int64{}
+		result  *responses.Response
 	)
-
-	flushToolEnds := func() {
-		for _, i := range toolOrder {
-			st := tools[i]
-			if st.ended {
-				continue
-			}
-			st.ended = true
-			input := st.args.String()
-			if input == "" {
-				input = "{}"
-			}
-			pending = append(pending, koine.Event{
-				Type:     koine.EventToolCallEnd,
-				Index:    st.index,
-				ToolCall: &koine.ToolCallEvent{ID: st.id, Name: st.name, Input: json.RawMessage(input)},
-			})
-		}
-	}
 
 	next := func() (koine.Event, error) {
 		for {
@@ -114,98 +85,69 @@ func (m *LanguageModel) Stream(ctx context.Context, req *koine.LanguageRequest) 
 				pending = pending[1:]
 				return ev, nil
 			}
+			if result != nil {
+				return koine.Event{}, io.EOF
+			}
 			if !sse.Next() {
 				if err := sse.Err(); err != nil {
 					return koine.Event{}, wrapErr(err)
 				}
-				if !stopSent {
-					stopSent = true
-					flushToolEnds()
-					pending = append(pending, koine.Event{Type: koine.EventStop, StopReason: mapFinishReason(finish)})
-					continue
+				return koine.Event{}, &koine.Error{Provider: Name, Message: "stream ended before the response completed"}
+			}
+			ev := sse.Current()
+			index := int(ev.OutputIndex)
+			switch ev.Type {
+			case "response.output_item.added":
+				if ev.Item.Type == "function_call" {
+					tc := &koine.ToolCallEvent{ID: ev.Item.CallID, Name: ev.Item.Name}
+					calls[ev.OutputIndex] = tc
+					pending = append(pending, koine.Event{Type: koine.EventToolCallStart, Index: index, ToolCall: tc})
 				}
-				return koine.Event{}, io.EOF
-			}
-			chunk := sse.Current()
-			acc.AddChunk(chunk)
-			if u, ok := decodeUsage(chunk.Usage); ok {
-				usage = u
-				pending = append(pending, koine.Event{Type: koine.EventUsage, Usage: &u})
-			}
-			if len(chunk.Choices) == 0 {
-				continue
-			}
-			choice := chunk.Choices[0]
-			delta := choice.Delta
-			if text, ok := reasoningDelta(delta); ok {
-				reasoning.WriteString(text)
-				if blockKind != "thinking" {
-					blockKind = "thinking"
-					blockIndex++
+			case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+				part := ev.SummaryIndex
+				if ev.Type == "response.reasoning_text.delta" {
+					part = ev.ContentIndex
 				}
-				pending = append(pending, koine.Event{Type: koine.EventThinkingDelta, Index: blockIndex, Text: text})
-			}
-			if delta.Content != "" {
-				if blockKind != "text" {
-					blockKind = "text"
-					blockIndex++
+				if last, ok := parts[ev.OutputIndex]; ok && last != part {
+					pending = append(pending, koine.Event{Type: koine.EventThinkingDelta, Index: index, Text: reasoningSeparator})
 				}
-				pending = append(pending, koine.Event{Type: koine.EventTextDelta, Index: blockIndex, Text: delta.Content})
-			}
-			for _, tc := range delta.ToolCalls {
-				st := tools[tc.Index]
-				if st == nil {
-					blockKind = "tool"
-					blockIndex++
-					st = &toolState{id: tc.ID, name: tc.Function.Name, index: blockIndex}
-					tools[tc.Index] = st
-					toolOrder = append(toolOrder, tc.Index)
-					pending = append(pending, koine.Event{
-						Type:     koine.EventToolCallStart,
-						Index:    st.index,
-						ToolCall: &koine.ToolCallEvent{ID: st.id, Name: st.name},
-					})
-				} else {
-					if st.id == "" {
-						st.id = tc.ID
-					}
-					if st.name == "" {
-						st.name = tc.Function.Name
-					}
-				}
-				if tc.Function.Arguments != "" {
-					st.args.WriteString(tc.Function.Arguments)
+				parts[ev.OutputIndex] = part
+				pending = append(pending, koine.Event{Type: koine.EventThinkingDelta, Index: index, Text: ev.Delta})
+			case "response.output_text.delta", "response.refusal.delta":
+				pending = append(pending, koine.Event{Type: koine.EventTextDelta, Index: index, Text: ev.Delta})
+			case "response.function_call_arguments.delta":
+				if tc := calls[ev.OutputIndex]; tc != nil {
 					pending = append(pending, koine.Event{
 						Type:     koine.EventToolCallDelta,
-						Index:    st.index,
-						ToolCall: &koine.ToolCallEvent{ID: st.id, Name: st.name, InputDelta: tc.Function.Arguments},
+						Index:    index,
+						ToolCall: &koine.ToolCallEvent{ID: tc.ID, Name: tc.Name, InputDelta: ev.Delta},
 					})
 				}
-			}
-			if choice.FinishReason != "" {
-				finish = choice.FinishReason
-				flushToolEnds()
+			case "response.output_item.done":
+				items[ev.OutputIndex] = ev.Item
+				if ev.Item.Type == "function_call" {
+					pending = append(pending, koine.Event{
+						Type:     koine.EventToolCallEnd,
+						Index:    index,
+						ToolCall: &koine.ToolCallEvent{ID: ev.Item.CallID, Name: ev.Item.Name, Input: callInput(ev.Item)},
+					})
+				}
+			case "response.completed", "response.incomplete":
+				result = &ev.Response
+				if u, ok := decodeResponsesUsage(result.Usage); ok {
+					pending = append(pending, koine.Event{Type: koine.EventUsage, Usage: &u})
+				}
+				pending = append(pending, koine.Event{Type: koine.EventStop, StopReason: responsesStopReason(result, items)})
+			case "response.failed":
+				e := ev.Response.Error
+				return koine.Event{}, &koine.Error{Provider: Name, Code: string(e.Code), Message: cmp.Or(e.Message, "response failed")}
+			case "error":
+				return koine.Event{}, &koine.Error{Provider: Name, Code: ev.Code, Message: cmp.Or(ev.Message, "response failed")}
 			}
 		}
 	}
 	final := func() (*koine.LanguageResponse, error) {
-		return decodeResponse(&acc, reasoning.String(), tools, toolOrder, finish, usage), nil
+		return decodeResponsesResult(result, items), nil
 	}
 	return koine.NewLanguageStream(next, final, sse.Close), nil
-}
-
-// reasoningDelta reads the non-standard reasoning_content field that
-// OpenAI-compatible reasoning models (DeepSeek, Qwen, GLM, Kimi) stream.
-func reasoningDelta(delta openai.ChatCompletionChunkChoiceDelta) (string, bool) {
-	// Extra fields carry status "invalid" in respjson (no schema to validate
-	// against), so presence is tested via Raw, not Valid.
-	field, ok := delta.JSON.ExtraFields["reasoning_content"]
-	if !ok || field.Raw() == "" || field.Raw() == "null" {
-		return "", false
-	}
-	var text string
-	if err := json.Unmarshal([]byte(field.Raw()), &text); err != nil || text == "" {
-		return "", false
-	}
-	return text, true
 }

@@ -13,6 +13,10 @@ import (
 // LanguageRequest.ProviderOptions[anthropic.Name].
 type LanguageOptions struct {
 	TopK *int
+	// Thinking replaces the mapping from the normalized Thinking.
+	Thinking *anthropic.ThinkingConfigParamUnion
+	// Effort sets output_config.effort.
+	Effort anthropic.OutputConfigEffort
 }
 
 // LanguageModel speaks the Anthropic Messages protocol for one model.
@@ -33,7 +37,7 @@ func (m *LanguageModel) Model() string { return m.model }
 func (m *LanguageModel) Provider() string { return Name }
 
 func (m *LanguageModel) Capabilities() koine.LanguageCapabilities {
-	return koine.LanguageCapabilities{Thinking: true, CacheControl: true, ParallelToolCalls: true, Images: true, StructuredOutput: true}
+	return koine.LanguageCapabilities{StopSequences: true, Thinking: true, CacheControl: true, ParallelToolCalls: true, Images: true, StructuredOutput: true}
 }
 
 // Complete performs one Messages call and returns the final response.
