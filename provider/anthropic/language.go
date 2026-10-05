@@ -13,9 +13,10 @@ import (
 // LanguageRequest.ProviderOptions[anthropic.Name].
 type LanguageOptions struct {
 	TopK *int
-	// Thinking replaces the mapping from the normalized Thinking.
+	// Thinking replaces the mapping from the normalized Thinking, its
+	// output_config.effort included.
 	Thinking *anthropic.ThinkingConfigParamUnion
-	// Effort sets output_config.effort.
+	// Effort sets output_config.effort over the normalized one.
 	Effort anthropic.OutputConfigEffort
 }
 

@@ -14,7 +14,18 @@ import (
 // Messages API requires it.
 const defaultMaxTokens = 4096
 
-var effortBudgets = map[koine.ThinkingEffort]int64{
+var effortLevels = map[koine.ThinkingEffort]anthropic.OutputConfigEffort{
+	koine.ThinkingMinimal: anthropic.OutputConfigEffortLow,
+	koine.ThinkingLow:     anthropic.OutputConfigEffortLow,
+	koine.ThinkingMedium:  anthropic.OutputConfigEffortMedium,
+	koine.ThinkingHigh:    anthropic.OutputConfigEffortHigh,
+	koine.ThinkingXHigh:   anthropic.OutputConfigEffortXhigh,
+	koine.ThinkingMax:     anthropic.OutputConfigEffortMax,
+}
+
+// effortReserves is the room max_tokens keeps for thinking at each effort:
+// adaptive thinking draws from max_tokens without a budget of its own.
+var effortReserves = map[koine.ThinkingEffort]int64{
 	koine.ThinkingMinimal: 1024,
 	koine.ThinkingLow:     4096,
 	koine.ThinkingMedium:  8192,
@@ -41,31 +52,47 @@ func encodeRequest(model string, req *koine.LanguageRequest) (anthropic.MessageN
 	if req.TopP != nil {
 		params.TopP = anthropic.Float(*req.TopP)
 	}
+	var reserve int64
 	if req.Thinking != nil {
-		if req.Thinking.Effort == koine.ThinkingNone {
+		// Requested thinking comes back readable: newer models omit the text
+		// unless display asks for a summary.
+		switch {
+		case req.Thinking.Effort == koine.ThinkingNone:
 			if req.Thinking.BudgetTokens > 0 {
 				return anthropic.MessageNewParams{}, fmt.Errorf("ThinkingNone cannot be combined with BudgetTokens")
 			}
 			disabled := anthropic.NewThinkingConfigDisabledParam()
 			params.Thinking = anthropic.ThinkingConfigParamUnion{OfDisabled: &disabled}
-		} else {
-			budget := int64(req.Thinking.BudgetTokens)
-			if budget == 0 {
-				budget = effortBudgets[req.Thinking.Effort]
-			}
-			if budget > 0 {
-				params.Thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
+		case req.Thinking.BudgetTokens > 0:
+			params.Thinking = anthropic.ThinkingConfigParamUnion{OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+				BudgetTokens: int64(req.Thinking.BudgetTokens),
+				Display:      anthropic.ThinkingConfigEnabledDisplaySummarized,
+			}}
+		default:
+			if effort, ok := effortLevels[req.Thinking.Effort]; ok {
+				params.Thinking = anthropic.ThinkingConfigParamUnion{OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+					Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
+				}}
+				params.OutputConfig.Effort = effort
+				reserve = effortReserves[req.Thinking.Effort]
 			}
 		}
 	}
 	o, _ := req.ProviderOptions[Name].(LanguageOptions)
 	if o.Thinking != nil {
 		params.Thinking = *o.Thinking
+		params.OutputConfig.Effort = ""
+		reserve = 0
 	}
-	if e := params.Thinking.OfEnabled; e != nil && params.MaxTokens <= e.BudgetTokens {
-		params.MaxTokens += e.BudgetTokens
+	if o.Effort != "" {
+		params.OutputConfig.Effort = o.Effort
 	}
-	params.OutputConfig.Effort = o.Effort
+	if e := params.Thinking.OfEnabled; e != nil {
+		reserve = e.BudgetTokens
+	}
+	if params.MaxTokens <= reserve {
+		params.MaxTokens += reserve
+	}
 	if rf := req.ResponseFormat; rf != nil {
 		if len(rf.Schema) == 0 {
 			return anthropic.MessageNewParams{}, fmt.Errorf("ResponseFormat requires a schema")

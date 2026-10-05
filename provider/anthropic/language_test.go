@@ -179,9 +179,12 @@ func TestEncodeRequestWire(t *testing.T) {
 			Text string `json:"text"`
 		} `json:"system"`
 		Thinking struct {
-			Type         string `json:"type"`
-			BudgetTokens int    `json:"budget_tokens"`
+			Type    string `json:"type"`
+			Display string `json:"display"`
 		} `json:"thinking"`
+		OutputConfig struct {
+			Effort string `json:"effort"`
+		} `json:"output_config"`
 		CacheControl struct {
 			Type string `json:"type"`
 			TTL  string `json:"ttl"`
@@ -205,9 +208,8 @@ func TestEncodeRequestWire(t *testing.T) {
 	if wire.Model != "claude-test" || wire.TopK != 5 || wire.Temp != 0.5 || wire.System[0].Text != "be brief" {
 		t.Errorf("basics: %+v", wire)
 	}
-	// MaxTokens must exceed the thinking budget.
-	if wire.Thinking.Type != "enabled" || wire.Thinking.BudgetTokens != 16384 || wire.MaxTokens != 1000+16384 {
-		t.Errorf("thinking: %+v max_tokens=%d", wire.Thinking, wire.MaxTokens)
+	if wire.Thinking.Type != "adaptive" || wire.Thinking.Display != "summarized" || wire.OutputConfig.Effort != "high" || wire.MaxTokens != 1000+16384 {
+		t.Errorf("thinking: %+v output_config=%+v max_tokens=%d", wire.Thinking, wire.OutputConfig, wire.MaxTokens)
 	}
 	if wire.CacheControl.Type != "ephemeral" || wire.CacheControl.TTL != "1h" {
 		t.Errorf("cache_control: %+v", wire.CacheControl)
@@ -456,23 +458,31 @@ func TestThinkingWire(t *testing.T) {
 	}
 }
 
-func TestThinkingOverrideWire(t *testing.T) {
+func TestThinkingMappingWire(t *testing.T) {
+	high := koine.Thinking{Effort: koine.ThinkingHigh}
 	adaptive := anthropic.ThinkingConfigParamUnion{OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{Display: anthropic.ThinkingConfigAdaptiveDisplayOmitted}}
 	betweenTools := anthropic.ThinkingConfigParamUnion{OfBetweenTools: &anthropic.ThinkingConfigBetweenToolsParam{}}
 	enabled := anthropic.ThinkingConfigParamOfEnabled(8000)
 	cases := []struct {
 		name          string
 		maxTokens     int
+		thinking      koine.Thinking
 		opts          LanguageOptions
 		format        *koine.ResponseFormat
 		wantThinking  string
 		wantOutput    string
 		wantMaxTokens int
 	}{
-		{"adaptive replaces normalized thinking", 100, LanguageOptions{Thinking: &adaptive, Effort: anthropic.OutputConfigEffortXhigh}, nil, `{"type":"adaptive","display":"omitted"}`, `{"effort":"xhigh"}`, 100},
-		{"effort merges with format", 100, LanguageOptions{Thinking: &adaptive, Effort: anthropic.OutputConfigEffortLow}, &koine.ResponseFormat{Schema: map[string]any{"type": "object"}}, `{"type":"adaptive","display":"omitted"}`, `{"effort":"low","format":{"schema":{"type":"object"},"type":"json_schema"}}`, 100},
-		{"between tools", 100, LanguageOptions{Thinking: &betweenTools}, nil, `{"type":"between_tools"}`, ``, 100},
-		{"enabled budget still raises max tokens", 0, LanguageOptions{Thinking: &enabled}, nil, `{"budget_tokens":8000,"type":"enabled"}`, ``, defaultMaxTokens + 8000},
+		{"effort maps to adaptive thinking", 0, high, LanguageOptions{}, nil, `{"type":"adaptive","display":"summarized"}`, `{"effort":"high"}`, defaultMaxTokens + 16384},
+		{"minimal rounds up to low", 50000, koine.Thinking{Effort: koine.ThinkingMinimal}, LanguageOptions{}, nil, `{"type":"adaptive","display":"summarized"}`, `{"effort":"low"}`, 50000},
+		{"max stays max", 50000, koine.Thinking{Effort: koine.ThinkingMax}, LanguageOptions{}, nil, `{"type":"adaptive","display":"summarized"}`, `{"effort":"max"}`, 50000},
+		{"native effort wins", 50000, high, LanguageOptions{Effort: anthropic.OutputConfigEffortLow}, nil, `{"type":"adaptive","display":"summarized"}`, `{"effort":"low"}`, 50000},
+		{"budget maps to manual thinking", 0, koine.Thinking{BudgetTokens: 8000}, LanguageOptions{}, nil, `{"type":"enabled","budget_tokens":8000,"display":"summarized"}`, ``, defaultMaxTokens + 8000},
+		{"budget wins over effort", 0, koine.Thinking{Effort: koine.ThinkingLow, BudgetTokens: 8000}, LanguageOptions{}, nil, `{"type":"enabled","budget_tokens":8000,"display":"summarized"}`, ``, defaultMaxTokens + 8000},
+		{"override replaces normalized thinking", 100, high, LanguageOptions{Thinking: &adaptive, Effort: anthropic.OutputConfigEffortXhigh}, nil, `{"type":"adaptive","display":"omitted"}`, `{"effort":"xhigh"}`, 100},
+		{"effort merges with format", 100, high, LanguageOptions{Thinking: &adaptive, Effort: anthropic.OutputConfigEffortLow}, &koine.ResponseFormat{Schema: map[string]any{"type": "object"}}, `{"type":"adaptive","display":"omitted"}`, `{"effort":"low","format":{"schema":{"type":"object"},"type":"json_schema"}}`, 100},
+		{"between tools", 100, high, LanguageOptions{Thinking: &betweenTools}, nil, `{"type":"between_tools"}`, ``, 100},
+		{"override budget still raises max tokens", 0, high, LanguageOptions{Thinking: &enabled}, nil, `{"budget_tokens":8000,"type":"enabled"}`, ``, defaultMaxTokens + 8000},
 	}
 	for _, c := range cases {
 		var body json.RawMessage
@@ -480,7 +490,7 @@ func TestThinkingOverrideWire(t *testing.T) {
 		d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
 		stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
 			MaxTokens:       c.maxTokens,
-			Thinking:        &koine.Thinking{Effort: koine.ThinkingHigh},
+			Thinking:        &c.thinking,
 			ResponseFormat:  c.format,
 			Messages:        []koine.Message{koine.UserText("hi")},
 			ProviderOptions: map[string]any{Name: c.opts},

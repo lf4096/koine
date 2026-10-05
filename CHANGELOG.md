@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking**: anthropic maps `Thinking.Effort` to adaptive thinking with `output_config.effort` instead of a token budget, as newer Claude models reject budgets. Models before Claude Opus 4.6 and Sonnet 4.6 reject adaptive thinking; pass `BudgetTokens` for them.
+- anthropic asks for summarized thinking text whenever thinking is requested, since newer Claude models omit it by default.
+
 ## [0.3.0] - 2026-09-30
 
 ### Added

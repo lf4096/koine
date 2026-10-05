@@ -296,15 +296,16 @@ const (
 // Thinking configures reasoning for one request. A zero-value Thinking (no
 // Effort, no BudgetTokens) leaves the provider default, same as nil.
 // Providers send whichever field matches their native dial and convert the
-// other; where both dials are native (Gemini), BudgetTokens wins.
+// other; where both dials are native, BudgetTokens wins. Requested thinking
+// also asks for readable thinking text where the provider can return it.
 type Thinking struct {
 	Effort       ThinkingEffort
 	BudgetTokens int
 }
 
 // ThinkingEffort is a normalized reasoning-effort level. Providers map it to
-// their native knob: an effort level or a token budget. On Gemini the knob is
-// thinkingLevel, which Gemini 2.x models reject; use BudgetTokens for those.
+// their native effort knob. Some models accept only a budget and others only
+// an effort; set the field the model takes.
 type ThinkingEffort string
 
 const (

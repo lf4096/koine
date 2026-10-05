@@ -26,7 +26,7 @@ func ExampleLanguageModel_Complete() {
 
 func ExampleLanguageModel_Stream() {
 	ctx := context.Background()
-	m := anthropic.New().LanguageModel("claude-sonnet-4-5")
+	m := anthropic.New().LanguageModel("claude-sonnet-5")
 
 	stream, err := m.Stream(ctx, &koine.LanguageRequest{
 		Thinking: &koine.Thinking{Effort: koine.ThinkingMedium},

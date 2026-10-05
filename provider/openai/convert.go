@@ -29,7 +29,7 @@ var effortLevels = map[koine.ThinkingEffort]shared.ReasoningEffort{
 	koine.ThinkingMax:     "max",
 }
 
-// The thresholds mirror the anthropic provider's effort table.
+// The thresholds mirror the anthropic provider's effort reserves.
 func effortForBudget(budget int) koine.ThinkingEffort {
 	switch {
 	case budget <= 0:
