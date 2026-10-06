@@ -99,14 +99,6 @@ func encodeRequest(model string, req *koine.LanguageRequest) (anthropic.MessageN
 		}
 		params.OutputConfig.Format = anthropic.JSONOutputFormatParam{Schema: rf.Schema}
 	}
-	switch req.CacheRetention {
-	case koine.CacheShort:
-		params.CacheControl = anthropic.NewCacheControlEphemeralParam()
-	case koine.CacheLong:
-		cc := anthropic.NewCacheControlEphemeralParam()
-		cc.TTL = anthropic.CacheControlEphemeralTTLTTL1h
-		params.CacheControl = cc
-	}
 	for _, t := range req.Tools {
 		tool, err := encodeTool(t)
 		if err != nil {
@@ -129,7 +121,54 @@ func encodeRequest(model string, req *koine.LanguageRequest) (anthropic.MessageN
 	if o.TopK != nil {
 		params.TopK = anthropic.Int(int64(*o.TopK))
 	}
+	placeCacheMarkers(&params, req.CacheRetention)
 	return params, nil
+}
+
+func placeCacheMarkers(params *anthropic.MessageNewParams, retention koine.CacheRetention) {
+	marker := anthropic.NewCacheControlEphemeralParam()
+	switch retention {
+	case koine.CacheShort:
+	case koine.CacheLong:
+		marker.TTL = anthropic.CacheControlEphemeralTTLTTL1h
+	default:
+		return
+	}
+	if n := len(params.Tools); n > 0 {
+		if cc := params.Tools[n-1].GetCacheControl(); cc != nil {
+			*cc = marker
+		}
+	}
+	if n := len(params.System); n > 0 {
+		params.System[n-1].CacheControl = marker
+	}
+	msgs := params.Messages
+	if len(msgs) == 0 {
+		return
+	}
+	markLastBlock(msgs[len(msgs)-1], marker)
+	// Also mark where the previous request ended: the API finds an earlier cache
+	// entry only within a limited number of blocks before each marker, so a
+	// request that adds many blocks would otherwise miss it.
+	i := len(msgs) - 1
+	for i >= 0 && msgs[i].Role == anthropic.MessageParamRoleUser {
+		i--
+	}
+	for i >= 0 && msgs[i].Role != anthropic.MessageParamRoleUser {
+		i--
+	}
+	if i >= 0 {
+		markLastBlock(msgs[i], marker)
+	}
+}
+
+func markLastBlock(m anthropic.MessageParam, marker anthropic.CacheControlEphemeralParam) {
+	for i := len(m.Content) - 1; i >= 0; i-- {
+		if cc := m.Content[i].GetCacheControl(); cc != nil {
+			*cc = marker
+			return
+		}
+	}
 }
 
 // encodeTool splits the schema into the SDK's structured fields: properties

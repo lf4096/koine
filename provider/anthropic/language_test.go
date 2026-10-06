@@ -136,11 +136,10 @@ func TestEncodeRequestWire(t *testing.T) {
 	topK := 5
 	temp := 0.5
 	req := &koine.LanguageRequest{
-		System:         "be brief",
-		MaxTokens:      1000,
-		Temperature:    &temp,
-		Thinking:       &koine.Thinking{Effort: koine.ThinkingHigh},
-		CacheRetention: koine.CacheLong,
+		System:      "be brief",
+		MaxTokens:   1000,
+		Temperature: &temp,
+		Thinking:    &koine.Thinking{Effort: koine.ThinkingHigh},
 		Tools: []koine.Tool{{
 			Name:        "get_weather",
 			Description: "weather lookup",
@@ -185,10 +184,6 @@ func TestEncodeRequestWire(t *testing.T) {
 		OutputConfig struct {
 			Effort string `json:"effort"`
 		} `json:"output_config"`
-		CacheControl struct {
-			Type string `json:"type"`
-			TTL  string `json:"ttl"`
-		} `json:"cache_control"`
 		ToolChoice struct {
 			Type string `json:"type"`
 		} `json:"tool_choice"`
@@ -210,9 +205,6 @@ func TestEncodeRequestWire(t *testing.T) {
 	}
 	if wire.Thinking.Type != "adaptive" || wire.Thinking.Display != "summarized" || wire.OutputConfig.Effort != "high" || wire.MaxTokens != 1000+16384 {
 		t.Errorf("thinking: %+v output_config=%+v max_tokens=%d", wire.Thinking, wire.OutputConfig, wire.MaxTokens)
-	}
-	if wire.CacheControl.Type != "ephemeral" || wire.CacheControl.TTL != "1h" {
-		t.Errorf("cache_control: %+v", wire.CacheControl)
 	}
 	if wire.ToolChoice.Type != "any" {
 		t.Errorf("tool_choice: %+v", wire.ToolChoice)
@@ -249,6 +241,126 @@ func TestEncodeRequestWire(t *testing.T) {
 	}
 	if toolResult.Type != "tool_result" || toolResult.ToolUseID != "toolu_1" {
 		t.Errorf("tool_result = %+v", toolResult)
+	}
+}
+
+func TestCacheMarkersWire(t *testing.T) {
+	tools := []koine.Tool{{Name: "get_weather"}, {Name: "get_time"}}
+	answer := func(text string) koine.Message {
+		return koine.Message{Role: koine.RoleAssistant, Blocks: koine.Blocks{&koine.TextBlock{Text: text}}}
+	}
+	call := func(id string) koine.Message {
+		return koine.Message{Role: koine.RoleAssistant, Blocks: koine.Blocks{
+			&koine.ThinkingBlock{Text: "T", Signature: "S"},
+			&koine.ToolUseBlock{ID: id, Name: "get_weather", Input: json.RawMessage(`{"city":"SF"}`)},
+		}}
+	}
+	cases := []struct {
+		name      string
+		retention koine.CacheRetention
+		system    string
+		tools     []koine.Tool
+		messages  []koine.Message
+		want      []string
+	}{
+		{
+			"tool loop with tools and system", koine.CacheShort, "sys", tools,
+			[]koine.Message{koine.UserText("q"), call("t1"), koine.ToolResultText("t1", "sunny", false), call("t2"), koine.ToolResultText("t2", "rainy", false)},
+			[]string{"tools[1]", "system[0]", "messages[2][0]", "messages[4][0]"},
+		},
+		{
+			"parallel tool calls", koine.CacheShort, "", nil,
+			[]koine.Message{koine.UserText("q"), {Role: koine.RoleAssistant, Blocks: koine.Blocks{
+				&koine.ToolUseBlock{ID: "t1", Name: "get_weather", Input: json.RawMessage(`{"city":"SF"}`)},
+				&koine.ToolUseBlock{ID: "t2", Name: "get_weather", Input: json.RawMessage(`{"city":"LA"}`)},
+			}}, koine.ToolResultText("t1", "sunny", false), koine.ToolResultText("t2", "rainy", false)},
+			[]string{"messages[0][0]", "messages[3][0]"},
+		},
+		{
+			"no tools", koine.CacheShort, "sys", nil,
+			[]koine.Message{koine.UserText("q1"), answer("a1"), koine.UserText("q2")},
+			[]string{"system[0]", "messages[0][0]", "messages[2][0]"},
+		},
+		{
+			"single message", koine.CacheShort, "", tools[:1],
+			[]koine.Message{koine.UserText("q")},
+			[]string{"tools[0]", "messages[0][0]"},
+		},
+		{
+			"last block thinking", koine.CacheShort, "", nil,
+			[]koine.Message{koine.UserText("q"), {Role: koine.RoleAssistant, Blocks: koine.Blocks{
+				&koine.TextBlock{Text: "answer"},
+				&koine.ThinkingBlock{Text: "T", Signature: "S"},
+			}}},
+			[]string{"messages[0][0]", "messages[1][0]"},
+		},
+		{
+			"long retention", koine.CacheLong, "sys", tools[:1],
+			[]koine.Message{koine.UserText("q")},
+			[]string{"tools[0] 1h", "system[0] 1h", "messages[0][0] 1h"},
+		},
+		{
+			"default retention", koine.CacheDefault, "sys", tools,
+			[]koine.Message{koine.UserText("q1"), answer("a1"), koine.UserText("q2")},
+			nil,
+		},
+	}
+	for _, c := range cases {
+		var body json.RawMessage
+		server := sseServer(t, &body, streamFixture...)
+		d := New(WithAPIKey("test"), WithBaseURL(server.URL)).LanguageModel("claude-test")
+		stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
+			System:         c.system,
+			Tools:          c.tools,
+			Messages:       c.messages,
+			CacheRetention: c.retention,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		for stream.Next() {
+		}
+		stream.Close()
+
+		var wire struct {
+			CacheControl json.RawMessage  `json:"cache_control"`
+			Tools        []map[string]any `json:"tools"`
+			System       []map[string]any `json:"system"`
+			Messages     []struct {
+				Content []map[string]any `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(body, &wire); err != nil {
+			t.Fatalf("%s: decode wire: %v", c.name, err)
+		}
+		if len(wire.CacheControl) > 0 {
+			t.Errorf("%s: top-level cache_control = %s", c.name, wire.CacheControl)
+		}
+		var got []string
+		collect := func(path string, block map[string]any) {
+			cc, ok := block["cache_control"].(map[string]any)
+			if !ok {
+				return
+			}
+			if ttl, _ := cc["ttl"].(string); ttl != "" {
+				path += " " + ttl
+			}
+			got = append(got, path)
+		}
+		for i, b := range wire.Tools {
+			collect(fmt.Sprintf("tools[%d]", i), b)
+		}
+		for i, b := range wire.System {
+			collect(fmt.Sprintf("system[%d]", i), b)
+		}
+		for i, m := range wire.Messages {
+			for j, b := range m.Content {
+				collect(fmt.Sprintf("messages[%d][%d]", i, j), b)
+			}
+		}
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: markers = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 

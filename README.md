@@ -186,7 +186,7 @@ Maps to each provider's native mechanism: OpenAI `text.format: json_schema` (`re
 req.CacheRetention = koine.CacheShort // Anthropic: 5m TTL; koine.CacheLong: 1h
 ```
 
-On Anthropic this sets a top-level `cache_control`, caching the whole prefix up to the last block. OpenAI and Gemini cache automatically and ignore the knob. Cache accounting is always visible: `Usage.CacheReadTokens` and `Usage.CacheWriteTokens`, and `Usage.InputTokens` excludes cache hits on every provider.
+On Anthropic this places `cache_control` breakpoints on the last tool, the system prompt, the last message and the user message before the last assistant message. A new conversation with the same tools and system prompt reads them from the cache. Within a conversation, each request reads the cache entry the previous request wrote. OpenAI and Gemini cache automatically and ignore the knob. Cache accounting is always visible: `Usage.CacheReadTokens` and `Usage.CacheWriteTokens`, and `Usage.InputTokens` excludes cache hits on every provider.
 
 ### Capabilities
 
