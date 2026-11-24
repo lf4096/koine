@@ -158,6 +158,7 @@ func TestEncodeRequestWire(t *testing.T) {
 				&koine.ToolUseBlock{ID: "toolu_1", Name: "get_weather", Input: json.RawMessage(`{"city":"SF"}`)},
 			}},
 			koine.ToolResultText("toolu_1", "sunny", false),
+			{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.TextBlock{Text: "terse"}, &koine.TextBlock{Text: "metric"}}},
 		},
 		ProviderOptions: map[string]any{Name: LanguageOptions{TopK: &topK}},
 	}
@@ -216,7 +217,7 @@ func TestEncodeRequestWire(t *testing.T) {
 	if tool.InputSchema["type"] != "object" || tool.InputSchema["additionalProperties"] != false {
 		t.Errorf("tool schema: %+v", tool.InputSchema)
 	}
-	if len(wire.Messages) != 3 {
+	if len(wire.Messages) != 4 {
 		t.Fatalf("messages: %d\n%s", len(wire.Messages), body)
 	}
 	// Same-provider thinking blocks must round-trip verbatim.
@@ -241,6 +242,62 @@ func TestEncodeRequestWire(t *testing.T) {
 	}
 	if toolResult.Type != "tool_result" || toolResult.ToolUseID != "toolu_1" {
 		t.Errorf("tool_result = %+v", toolResult)
+	}
+	system := wire.Messages[3]
+	var systemText []map[string]any
+	for _, c := range system.Content {
+		var block map[string]any
+		if err := json.Unmarshal(c, &block); err != nil {
+			t.Fatal(err)
+		}
+		systemText = append(systemText, block)
+	}
+	wantSystem := []map[string]any{{"type": "text", "text": "terse"}, {"type": "text", "text": "metric"}}
+	if system.Role != "system" || !reflect.DeepEqual(systemText, wantSystem) {
+		t.Errorf("system message = %s %v, want %v", system.Role, systemText, wantSystem)
+	}
+}
+
+func TestSystemMessageTextOnly(t *testing.T) {
+	_, err := encodeRequest("claude-test", &koine.LanguageRequest{Messages: []koine.Message{
+		koine.UserText("hi"),
+		{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.ImageBlock{MIMEType: "image/png", Data: []byte{1}}}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "text only") {
+		t.Errorf("want text-only error, got %v", err)
+	}
+}
+
+func TestOpeningSystemMessagesJoinTheSystemPrompt(t *testing.T) {
+	params, err := encodeRequest("claude-test", &koine.LanguageRequest{
+		System: "sys",
+		Messages: []koine.Message{
+			koine.SystemText("s1"),
+			{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.TextBlock{Text: "s2a"}, &koine.TextBlock{Text: "s2b"}}},
+			koine.UserText("q"),
+			koine.SystemText("later"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var system []string
+	for _, b := range params.System {
+		system = append(system, b.Text)
+	}
+	if want := []string{"sys", "s1", "s2a", "s2b"}; !reflect.DeepEqual(system, want) {
+		t.Errorf("system = %v, want %v", system, want)
+	}
+	if len(params.Messages) != 2 || params.Messages[0].Role != anthropic.MessageParamRoleUser || params.Messages[1].Role != anthropic.MessageParamRoleSystem {
+		t.Errorf("messages = %+v, want the user message, then the later system message", params.Messages)
+	}
+
+	_, err = encodeRequest("claude-test", &koine.LanguageRequest{Messages: []koine.Message{
+		{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.ImageBlock{MIMEType: "image/png", Data: []byte{1}}}},
+		koine.UserText("hi"),
+	}})
+	if err == nil || !strings.Contains(err.Error(), "text only") {
+		t.Errorf("want text-only error, got %v", err)
 	}
 }
 
@@ -298,6 +355,31 @@ func TestCacheMarkersWire(t *testing.T) {
 			"long retention", koine.CacheLong, "sys", tools[:1],
 			[]koine.Message{koine.UserText("q")},
 			[]string{"tools[0] 1h", "system[0] 1h", "messages[0][0] 1h"},
+		},
+		{
+			"system message last", koine.CacheShort, "sys", nil,
+			[]koine.Message{koine.UserText("q1"), answer("a1"), koine.UserText("q2"), koine.SystemText("s2")},
+			[]string{"system[0]", "messages[0][0]", "messages[3][0]"},
+		},
+		{
+			"system message after tool result", koine.CacheShort, "", nil,
+			[]koine.Message{koine.UserText("q"), call("t1"), koine.ToolResultText("t1", "sunny", false), koine.SystemText("s")},
+			[]string{"messages[0][0]", "messages[3][0]"},
+		},
+		{
+			"previous request ended in a system message", koine.CacheShort, "", nil,
+			[]koine.Message{koine.UserText("q1"), koine.SystemText("s1"), answer("a1"), koine.UserText("q2")},
+			[]string{"messages[1][0]", "messages[3][0]"},
+		},
+		{
+			"opening system messages", koine.CacheShort, "sys", nil,
+			[]koine.Message{koine.SystemText("s1"), koine.SystemText("s2"), koine.UserText("q")},
+			[]string{"system[0]", "messages[0][0]"},
+		},
+		{
+			"opening system message without System", koine.CacheShort, "", nil,
+			[]koine.Message{koine.SystemText("s1"), koine.UserText("q")},
+			[]string{"system[0]", "messages[0][0]"},
 		},
 		{
 			"default retention", koine.CacheDefault, "sys", tools,

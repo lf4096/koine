@@ -112,6 +112,22 @@ func encodeChatToolChoice(tc *koine.ToolChoice) openai.ChatCompletionToolChoiceO
 
 func encodeChatMessage(m koine.Message, replayReasoning bool) ([]openai.ChatCompletionMessageParamUnion, error) {
 	switch m.Role {
+	case koine.RoleSystem:
+		texts, err := systemTexts(m.Blocks)
+		if err != nil {
+			return nil, err
+		}
+		switch len(texts) {
+		case 0:
+			return nil, nil
+		case 1:
+			return []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(texts[0])}, nil
+		}
+		parts := make([]openai.ChatCompletionContentPartTextParam, len(texts))
+		for i, text := range texts {
+			parts[i] = openai.ChatCompletionContentPartTextParam{Text: text}
+		}
+		return []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(parts)}, nil
 	case koine.RoleTool:
 		var out []openai.ChatCompletionMessageParamUnion
 		for _, b := range m.Blocks {

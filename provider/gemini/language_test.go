@@ -235,6 +235,76 @@ func TestEncodeRequestWire(t *testing.T) {
 	}
 }
 
+func TestSystemMessageRejected(t *testing.T) {
+	var body json.RawMessage
+	server := sseServer(t, &body, streamFixture...)
+	d := newTestModel(t, server.URL)
+	if d.Capabilities().SystemMessages {
+		t.Error("Capabilities().SystemMessages = true")
+	}
+	_, err := d.Stream(context.Background(), &koine.LanguageRequest{Messages: []koine.Message{
+		koine.UserText("hi"),
+		koine.SystemText("terse"),
+	}})
+	if err == nil || !strings.Contains(err.Error(), "system messages are not supported") {
+		t.Errorf("want unsupported error, got %v", err)
+	}
+	if body != nil {
+		t.Errorf("request sent: %s", body)
+	}
+}
+
+func TestOpeningSystemMessagesJoinTheSystemInstruction(t *testing.T) {
+	var body json.RawMessage
+	server := sseServer(t, &body, streamFixture...)
+	d := newTestModel(t, server.URL)
+	stream, err := d.Stream(context.Background(), &koine.LanguageRequest{
+		System:   "be brief",
+		Messages: []koine.Message{koine.SystemText("terse"), koine.UserText("hi")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for stream.Next() {
+	}
+	stream.Close()
+	var wire struct {
+		SystemInstruction struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"systemInstruction"`
+		Contents []struct {
+			Role string `json:"role"`
+		} `json:"contents"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil {
+		t.Fatalf("decode wire: %v", err)
+	}
+	var system []string
+	for _, p := range wire.SystemInstruction.Parts {
+		system = append(system, p.Text)
+	}
+	if want := []string{"be brief", "terse"}; !reflect.DeepEqual(system, want) {
+		t.Errorf("system instruction = %v, want %v", system, want)
+	}
+	if len(wire.Contents) != 1 || wire.Contents[0].Role != "user" {
+		t.Errorf("contents = %+v, want the user turn only", wire.Contents)
+	}
+
+	body = nil
+	_, err = d.Stream(context.Background(), &koine.LanguageRequest{Messages: []koine.Message{
+		{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.ImageBlock{MIMEType: "image/png", Data: []byte{1}}}},
+		koine.UserText("hi"),
+	}})
+	if err == nil || !strings.Contains(err.Error(), "text only") {
+		t.Errorf("want text-only error, got %v", err)
+	}
+	if body != nil {
+		t.Errorf("request sent: %s", body)
+	}
+}
+
 func TestThinkingRawRoundTrip(t *testing.T) {
 	var body json.RawMessage
 	server := sseServer(t, &body, streamFixture...)

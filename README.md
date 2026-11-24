@@ -154,7 +154,9 @@ Messages are block lists, Anthropic-style — the most agent-complete shape of t
 | `ToolResultBlock` | `ToolUseID`, `Content`, `Result`, `IsError` | lives in `RoleTool` messages; `Result` carries a structured JSON payload, delivered as a native object where the protocol takes one; `Content` images ride only where the protocol accepts them (Anthropic, OpenAI Responses) — others error |
 | `ImageBlock` | `MIMEType`, `Data`, `URL`, `Raw` | inline bytes or URL; `Raw` set when the provider attaches metadata to an image (Gemini thought signatures) |
 
-Roles are `user`, `assistant`, and `tool`. Providers reshape the tool role to each protocol's native form: Anthropic merges tool messages into user turns with `tool_result` blocks, OpenAI sends them as `function_call_output` items (`role:"tool"` messages on Chat Completions), Gemini converts them to `functionResponse` parts.
+Roles are `system`, `user`, `assistant`, and `tool`. Providers reshape the tool role to each protocol's native form: Anthropic merges tool messages into user turns with `tool_result` blocks, OpenAI sends them as `function_call_output` items (`role:"tool"` messages on Chat Completions), Gemini converts them to `functionResponse` parts.
+
+A `system` message (`koine.SystemText`) carries text instructions. Ahead of every other message it is part of the system prompt on every provider. Later in the conversation it changes instructions without invalidating the cache, as a new `LanguageRequest.System` would: Anthropic sends it as a `system` message, OpenAI as a `developer` item (`role:"system"` on Chat Completions); gemini and vertex return an error. Where it may appear, and on which models, is the protocol's rule.
 
 The whole model marshals to JSON with type discriminators, so a `[]koine.Message` is also a session persistence format.
 
@@ -186,11 +188,11 @@ Maps to each provider's native mechanism: OpenAI `text.format: json_schema` (`re
 req.CacheRetention = koine.CacheShort // Anthropic: 5m TTL; koine.CacheLong: 1h
 ```
 
-On Anthropic this places `cache_control` breakpoints on the last tool, the system prompt, the last message and the user message before the last assistant message. A new conversation with the same tools and system prompt reads them from the cache. Within a conversation, each request reads the cache entry the previous request wrote. OpenAI and Gemini cache automatically and ignore the knob. Cache accounting is always visible: `Usage.CacheReadTokens` and `Usage.CacheWriteTokens`, and `Usage.InputTokens` excludes cache hits on every provider.
+On Anthropic this places `cache_control` breakpoints on the last tool, `LanguageRequest.System`, the last message and the message before the last assistant message. A new conversation with the same tools and system prompt reads them from the cache. Within a conversation, each request reads the cache entry the previous request wrote. OpenAI and Gemini cache automatically and ignore the knob. Cache accounting is always visible: `Usage.CacheReadTokens` and `Usage.CacheWriteTokens`, and `Usage.InputTokens` excludes cache hits on every provider.
 
 ### Capabilities
 
-`Capabilities()` reports what a provider can express (`StopSequences`, `Thinking`, `CacheControl`, `ParallelToolCalls`, `Images`, `StructuredOutput`), so a loop can degrade before sending a request the provider would reject.
+`Capabilities()` reports what a provider can express (`StopSequences`, `Thinking`, `CacheControl`, `ParallelToolCalls`, `Images`, `SystemMessages`, `StructuredOutput`), so a loop can degrade before sending a request the provider would reject.
 
 ## Embedding models
 

@@ -46,6 +46,17 @@ func encodeRequest(model string, req *koine.LanguageRequest) (anthropic.MessageN
 	if req.System != "" {
 		params.System = []anthropic.TextBlockParam{{Text: req.System}}
 	}
+	messages := req.Messages
+	for len(messages) > 0 && messages[0].Role == koine.RoleSystem {
+		for _, b := range messages[0].Blocks {
+			text, ok := b.(*koine.TextBlock)
+			if !ok {
+				return anthropic.MessageNewParams{}, fmt.Errorf("system message supports text only, got %q", b.BlockType())
+			}
+			params.System = append(params.System, anthropic.TextBlockParam{Text: text.Text})
+		}
+		messages = messages[1:]
+	}
 	if req.Temperature != nil {
 		params.Temperature = anthropic.Float(*req.Temperature)
 	}
@@ -109,7 +120,7 @@ func encodeRequest(model string, req *koine.LanguageRequest) (anthropic.MessageN
 	if req.ToolChoice != nil {
 		params.ToolChoice = encodeToolChoice(req.ToolChoice)
 	}
-	for _, m := range req.Messages {
+	for _, m := range messages {
 		mp, ok, err := encodeMessage(m)
 		if err != nil {
 			return anthropic.MessageNewParams{}, err
@@ -139,8 +150,11 @@ func placeCacheMarkers(params *anthropic.MessageNewParams, retention koine.Cache
 			*cc = marker
 		}
 	}
-	if n := len(params.System); n > 0 {
-		params.System[n-1].CacheControl = marker
+	// The system marker stays on the first block: the blocks after it come from
+	// the conversation's opening system messages, which other conversations
+	// sharing the same System do not have.
+	if len(params.System) > 0 {
+		params.System[0].CacheControl = marker
 	}
 	msgs := params.Messages
 	if len(msgs) == 0 {
@@ -151,10 +165,10 @@ func placeCacheMarkers(params *anthropic.MessageNewParams, retention koine.Cache
 	// entry only within a limited number of blocks before each marker, so a
 	// request that adds many blocks would otherwise miss it.
 	i := len(msgs) - 1
-	for i >= 0 && msgs[i].Role == anthropic.MessageParamRoleUser {
+	for i >= 0 && msgs[i].Role != anthropic.MessageParamRoleAssistant {
 		i--
 	}
-	for i >= 0 && msgs[i].Role != anthropic.MessageParamRoleUser {
+	for i >= 0 && msgs[i].Role == anthropic.MessageParamRoleAssistant {
 		i--
 	}
 	if i >= 0 {
@@ -237,11 +251,17 @@ func encodeToolChoice(tc *koine.ToolChoice) anthropic.ToolChoiceUnionParam {
 // thinking-only message); the Messages API rejects empty content.
 func encodeMessage(m koine.Message) (anthropic.MessageParam, bool, error) {
 	role := anthropic.MessageParamRoleUser
-	if m.Role == koine.RoleAssistant {
+	switch m.Role {
+	case koine.RoleSystem:
+		role = anthropic.MessageParamRoleSystem
+	case koine.RoleAssistant:
 		role = anthropic.MessageParamRoleAssistant
 	}
 	var blocks []anthropic.ContentBlockParamUnion
 	for _, b := range m.Blocks {
+		if m.Role == koine.RoleSystem && b.BlockType() != koine.BlockText {
+			return anthropic.MessageParam{}, false, fmt.Errorf("system message supports text only, got %q", b.BlockType())
+		}
 		cb, ok, err := encodeBlock(b)
 		if err != nil {
 			return anthropic.MessageParam{}, false, err

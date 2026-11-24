@@ -240,6 +240,8 @@ func TestChatEncodeRequestWire(t *testing.T) {
 				&koine.ToolUseBlock{ID: "call_1", Name: "get_weather", Input: json.RawMessage(`{"city":"SF"}`)},
 			}},
 			koine.ToolResultText("call_1", "sunny", false),
+			koine.SystemText("terse"),
+			{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.TextBlock{Text: "metric"}, &koine.TextBlock{Text: "units"}}},
 		},
 		ProviderOptions: map[string]any{Name: LanguageOptions{ExtraBody: map[string]any{"enable_thinking": true}}},
 	}
@@ -301,7 +303,7 @@ func TestChatEncodeRequestWire(t *testing.T) {
 	if wire.Tools[0].Function.Parameters["type"] != "object" {
 		t.Errorf("tool schema: %+v", wire.Tools[0])
 	}
-	if len(wire.Messages) != 4 {
+	if len(wire.Messages) != 6 {
 		t.Fatalf("messages: %d\n%s", len(wire.Messages), body)
 	}
 	if wire.Messages[0].Role != "system" || wire.Messages[1].Role != "user" {
@@ -314,6 +316,53 @@ func TestChatEncodeRequestWire(t *testing.T) {
 	toolMsg := wire.Messages[3]
 	if toolMsg.Role != "tool" || toolMsg.ToolCallID != "call_1" || toolMsg.Content != "sunny" {
 		t.Errorf("tool message: %+v", toolMsg)
+	}
+	if m := wire.Messages[4]; m.Role != "system" || m.Content != "terse" {
+		t.Errorf("system message: %+v", m)
+	}
+	wantParts := []any{map[string]any{"type": "text", "text": "metric"}, map[string]any{"type": "text", "text": "units"}}
+	if m := wire.Messages[5]; m.Role != "system" || !reflect.DeepEqual(m.Content, wantParts) {
+		t.Errorf("system message with parts: %+v", m)
+	}
+}
+
+func TestChatSystemMessageTextOnly(t *testing.T) {
+	_, _, err := encodeChatRequest("gpt-test", &koine.LanguageRequest{Messages: []koine.Message{
+		koine.UserText("hi"),
+		{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.ImageBlock{MIMEType: "image/png", Data: []byte{1}}}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "text only") {
+		t.Errorf("want text-only error, got %v", err)
+	}
+}
+
+func TestChatOpeningSystemMessageStaysASystemMessage(t *testing.T) {
+	params, _, err := encodeChatRequest("gpt-test", &koine.LanguageRequest{
+		System:   "be brief",
+		Messages: []koine.Message{koine.SystemText("terse"), koine.UserText("hi")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content any    `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatalf("decode wire: %v", err)
+	}
+	var got []string
+	for _, m := range wire.Messages {
+		got = append(got, fmt.Sprintf("%s:%v", m.Role, m.Content))
+	}
+	if want := []string{"system:be brief", "system:terse", "user:hi"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("messages = %v, want %v", got, want)
 	}
 }
 

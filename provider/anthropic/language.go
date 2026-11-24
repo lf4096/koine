@@ -38,7 +38,7 @@ func (m *LanguageModel) Model() string { return m.model }
 func (m *LanguageModel) Provider() string { return Name }
 
 func (m *LanguageModel) Capabilities() koine.LanguageCapabilities {
-	return koine.LanguageCapabilities{StopSequences: true, Thinking: true, CacheControl: true, ParallelToolCalls: true, Images: true, StructuredOutput: true}
+	return koine.LanguageCapabilities{StopSequences: true, Thinking: true, CacheControl: true, ParallelToolCalls: true, Images: true, SystemMessages: true, StructuredOutput: true}
 }
 
 // Complete performs one Messages call and returns the final response.

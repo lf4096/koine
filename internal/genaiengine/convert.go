@@ -22,8 +22,23 @@ var effortLevels = map[koine.ThinkingEffort]genai.ThinkingLevel{
 
 func (e *Engine) encodeRequest(req *koine.LanguageRequest) ([]*genai.Content, *genai.GenerateContentConfig, error) {
 	config := &genai.GenerateContentConfig{StopSequences: req.StopSequences}
+	var system []*genai.Part
 	if req.System != "" {
-		config.SystemInstruction = &genai.Content{Parts: []*genai.Part{{Text: req.System}}}
+		system = append(system, &genai.Part{Text: req.System})
+	}
+	messages := req.Messages
+	for len(messages) > 0 && messages[0].Role == koine.RoleSystem {
+		for _, b := range messages[0].Blocks {
+			text, ok := b.(*koine.TextBlock)
+			if !ok {
+				return nil, nil, fmt.Errorf("system message supports text only, got %q", b.BlockType())
+			}
+			system = append(system, &genai.Part{Text: text.Text})
+		}
+		messages = messages[1:]
+	}
+	if len(system) > 0 {
+		config.SystemInstruction = &genai.Content{Parts: system}
 	}
 	if req.Temperature != nil {
 		config.Temperature = new(float32(*req.Temperature))
@@ -76,7 +91,7 @@ func (e *Engine) encodeRequest(req *koine.LanguageRequest) ([]*genai.Content, *g
 			config.ThinkingConfig = o.ThinkingConfig
 		}
 	}
-	contents, err := e.encodeMessages(req.Messages)
+	contents, err := e.encodeMessages(messages)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -120,6 +135,8 @@ func (e *Engine) encodeMessages(msgs []koine.Message) ([]*genai.Content, error) 
 			err   error
 		)
 		switch m.Role {
+		case koine.RoleSystem:
+			return nil, fmt.Errorf("system messages are not supported inside the conversation")
 		case koine.RoleAssistant:
 			role = genai.RoleModel
 			parts, err = e.encodeAssistantParts(m.Blocks, toolNames)

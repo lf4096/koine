@@ -32,6 +32,10 @@ type LanguageCapabilities struct {
 	CacheControl      bool
 	ParallelToolCalls bool
 	Images            bool
+	// SystemMessages reports whether RoleSystem messages are accepted after
+	// other messages at the protocol level; individual models may still reject
+	// them.
+	SystemMessages bool
 	// StructuredOutput reports native schema-constrained output support at
 	// the protocol level; individual models may still reject it.
 	StructuredOutput bool
@@ -71,6 +75,11 @@ type LanguageRequest struct {
 type Message struct {
 	Role   Role   `json:"role"`
 	Blocks Blocks `json:"blocks"`
+}
+
+// SystemText builds a system message with a single text block.
+func SystemText(text string) Message {
+	return Message{Role: RoleSystem, Blocks: Blocks{&TextBlock{Text: text}}}
 }
 
 // UserText builds a user message with a single text block.
@@ -123,6 +132,14 @@ func (m Message) ToolUses() []*ToolUseBlock {
 type Role string
 
 const (
+	// RoleSystem carries instructions from the application inside the
+	// conversation, for content that changes after it starts; System on the
+	// request stays the opening instructions. It holds text blocks only.
+	// Ahead of every other message it is part of the system prompt, after
+	// System, on every provider. After other messages, providers without it
+	// return an error (Capabilities().SystemMessages), and where it may appear
+	// is the protocol's rule.
+	RoleSystem    Role = "system"
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
 	// RoleTool carries tool results back to the model. Providers reshape it

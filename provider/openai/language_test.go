@@ -274,6 +274,8 @@ func TestResponsesEncodeRequestWire(t *testing.T) {
 				&koine.TextBlock{Text: "compare"},
 				&koine.ImageBlock{MIMEType: "image/png", Data: []byte{1, 2, 3}},
 			}},
+			{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.TextBlock{Text: "terse"}, &koine.TextBlock{Text: "metric"}}},
+			koine.SystemText("units"),
 		},
 		ProviderOptions: map[string]any{Name: LanguageOptions{ExtraBody: map[string]any{"prompt_cache_key": "k1"}}},
 	}
@@ -339,8 +341,8 @@ func TestResponsesEncodeRequestWire(t *testing.T) {
 		t.Errorf("schemaless tool parameters = %v, want %v", wire.Tools[1].Parameters, want)
 	}
 
-	if len(wire.Input) != 9 {
-		t.Fatalf("input items = %d, want 9\n%s", len(wire.Input), body)
+	if len(wire.Input) != 11 {
+		t.Fatalf("input items = %d, want 11\n%s", len(wire.Input), body)
 	}
 	for i, raw := range map[int]string{1: reasoningRaw, 2: messageRaw, 3: callRaw} {
 		var got, want any
@@ -391,6 +393,54 @@ func TestResponsesEncodeRequestWire(t *testing.T) {
 	}
 	if parts[0].Type != "input_text" || parts[0].Text != "compare" || parts[1].Type != "input_image" || parts[1].ImageURL != "data:image/png;base64,AQID" || parts[1].Detail != "auto" {
 		t.Errorf("user parts = %+v", parts)
+	}
+	var system []map[string]any
+	if err := json.Unmarshal(items[9].Content, &system); err != nil {
+		t.Fatal(err)
+	}
+	wantSystem := []map[string]any{{"type": "input_text", "text": "terse"}, {"type": "input_text", "text": "metric"}}
+	if items[9].Role != "developer" || !reflect.DeepEqual(system, wantSystem) {
+		t.Errorf("input[9] = %s, want a developer message with %v", wire.Input[9], wantSystem)
+	}
+	if it := items[10]; it.Role != "developer" || string(it.Content) != `"units"` {
+		t.Errorf("input[10] = %s, want a developer message with plain text", wire.Input[10])
+	}
+}
+
+func TestResponsesSystemMessageTextOnly(t *testing.T) {
+	_, _, err := encodeResponsesRequest("gpt-test", &koine.LanguageRequest{Messages: []koine.Message{
+		koine.UserText("hi"),
+		{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.ImageBlock{MIMEType: "image/png", Data: []byte{1}}}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "text only") {
+		t.Errorf("want text-only error, got %v", err)
+	}
+}
+
+func TestResponsesOpeningSystemMessageStaysADeveloperItem(t *testing.T) {
+	params, _, err := encodeResponsesRequest("gpt-test", &koine.LanguageRequest{
+		System:   "be brief",
+		Messages: []koine.Message{koine.SystemText("terse"), koine.UserText("hi")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Instructions string `json:"instructions"`
+		Input        []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"input"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatalf("decode wire: %v", err)
+	}
+	if wire.Instructions != "be brief" || len(wire.Input) != 2 || wire.Input[0].Role != "developer" || string(wire.Input[0].Content) != `"terse"` || wire.Input[1].Role != "user" {
+		t.Errorf("wire = %s, want the instructions, then a developer item and the user message", raw)
 	}
 }
 

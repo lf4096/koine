@@ -30,7 +30,7 @@ func (m *ChatCompletionsModel) Model() string { return m.model }
 func (m *ChatCompletionsModel) Provider() string { return Name }
 
 func (m *ChatCompletionsModel) Capabilities() koine.LanguageCapabilities {
-	return koine.LanguageCapabilities{StopSequences: true, Thinking: true, ParallelToolCalls: true, Images: true, StructuredOutput: true}
+	return koine.LanguageCapabilities{StopSequences: true, Thinking: true, ParallelToolCalls: true, Images: true, SystemMessages: true, StructuredOutput: true}
 }
 
 // toolState assembles one streamed tool call; Chat Completions deltas carry

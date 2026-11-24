@@ -14,6 +14,7 @@ import (
 
 func TestMessageJSONRoundTrip(t *testing.T) {
 	msgs := []koine.Message{
+		koine.SystemText("terse mode"),
 		{Role: koine.RoleUser, Blocks: koine.Blocks{
 			&koine.TextBlock{Text: "hello"},
 			&koine.ImageBlock{MIMEType: "image/png", Data: []byte{1, 2, 3}},
@@ -85,6 +86,10 @@ func TestMessageHelpers(t *testing.T) {
 	}
 	if uses := m.ToolUses(); len(uses) != 1 || uses[0].ID != "t1" {
 		t.Errorf("ToolUses() = %#v", uses)
+	}
+	s := koine.SystemText("rule")
+	if s.Role != koine.RoleSystem || s.Text() != "rule" {
+		t.Errorf("SystemText: %#v", s)
 	}
 	u := koine.UserText("hi")
 	if u.Role != koine.RoleUser || u.Text() != "hi" {

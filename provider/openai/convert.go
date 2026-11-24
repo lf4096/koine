@@ -81,6 +81,18 @@ func callArguments(args string) string {
 	return args
 }
 
+func systemTexts(blocks koine.Blocks) ([]string, error) {
+	texts := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		t, ok := b.(*koine.TextBlock)
+		if !ok {
+			return nil, fmt.Errorf("system message supports text only, got %q", b.BlockType())
+		}
+		texts = append(texts, t.Text)
+	}
+	return texts, nil
+}
+
 func toolResultText(tr *koine.ToolResultBlock) (string, error) {
 	if len(tr.Result) > 0 {
 		if len(tr.Content) > 0 {
@@ -203,6 +215,22 @@ func encodeResponsesInput(msgs []koine.Message) (responses.ResponseInputParam, e
 	var input responses.ResponseInputParam
 	for _, m := range msgs {
 		switch m.Role {
+		case koine.RoleSystem:
+			texts, err := systemTexts(m.Blocks)
+			if err != nil {
+				return nil, err
+			}
+			switch len(texts) {
+			case 0:
+			case 1:
+				input = append(input, responses.ResponseInputItemParamOfMessage(texts[0], responses.EasyInputMessageRoleDeveloper))
+			default:
+				var parts responses.ResponseInputMessageContentListParam
+				for _, text := range texts {
+					parts = append(parts, responses.ResponseInputContentParamOfInputText(text))
+				}
+				input = append(input, responses.ResponseInputItemParamOfMessage(parts, responses.EasyInputMessageRoleDeveloper))
+			}
 		case koine.RoleTool:
 			for _, b := range m.Blocks {
 				tr, ok := b.(*koine.ToolResultBlock)
