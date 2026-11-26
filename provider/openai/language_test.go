@@ -444,6 +444,92 @@ func TestResponsesOpeningSystemMessageStaysADeveloperItem(t *testing.T) {
 	}
 }
 
+func TestResponsesCacheBreakpointWire(t *testing.T) {
+	marked := func(text string) string {
+		return `{"role":"developer","content":[{"type":"input_text","text":"` + text + `","prompt_cache_breakpoint":{"mode":"explicit"}}]}`
+	}
+	user := `{"role":"user","content":"q"}`
+	metric := koine.Message{Role: koine.RoleSystem, Blocks: koine.Blocks{&koine.TextBlock{Text: "terse"}, &koine.TextBlock{Text: "metric"}}}
+	cases := []struct {
+		name         string
+		retention    koine.CacheRetention
+		system       string
+		messages     []koine.Message
+		instructions string
+		input        string
+	}{
+		{
+			"system prompt", koine.CacheShort, "sys",
+			[]koine.Message{koine.UserText("q")},
+			"", `[` + marked("sys") + `,` + user + `]`,
+		},
+		{
+			"long retention", koine.CacheLong, "sys",
+			[]koine.Message{koine.UserText("q")},
+			"", `[` + marked("sys") + `,` + user + `]`,
+		},
+		{
+			"opening system messages", koine.CacheShort, "sys",
+			[]koine.Message{koine.SystemText("s1"), metric, koine.UserText("q")},
+			"", `[` + marked("sys") + `,{"role":"developer","content":"s1"},{"role":"developer","content":[{"type":"input_text","text":"terse"},{"type":"input_text","text":"metric"}]},` + user + `]`,
+		},
+		{
+			"opening system message without System", koine.CacheShort, "",
+			[]koine.Message{koine.SystemText("s1"), koine.UserText("q")},
+			"", `[` + marked("s1") + `,` + user + `]`,
+		},
+		{
+			"opening system message of two blocks without System", koine.CacheShort, "",
+			[]koine.Message{metric, koine.UserText("q")},
+			"", `[{"role":"developer","content":[{"type":"input_text","text":"terse","prompt_cache_breakpoint":{"mode":"explicit"}},{"type":"input_text","text":"metric"}]},` + user + `]`,
+		},
+		{
+			"later system message", koine.CacheShort, "",
+			[]koine.Message{koine.UserText("q"), koine.SystemText("s2")},
+			"", `[` + user + `,{"role":"developer","content":"s2"}]`,
+		},
+		{
+			"default retention", koine.CacheDefault, "sys",
+			[]koine.Message{koine.SystemText("s1"), metric, koine.UserText("q")},
+			`"sys"`, `[{"role":"developer","content":"s1"},{"role":"developer","content":[{"type":"input_text","text":"terse"},{"type":"input_text","text":"metric"}]},` + user + `]`,
+		},
+	}
+	if !New(WithAPIKey("test")).LanguageModel("gpt-test").Capabilities().CacheControl {
+		t.Error("Capabilities().CacheControl = false, want true")
+	}
+	for _, c := range cases {
+		params, _, err := encodeResponsesRequest("gpt-test", &koine.LanguageRequest{
+			System:         c.system,
+			Tools:          []koine.Tool{{Name: "get_weather"}},
+			Messages:       c.messages,
+			CacheRetention: c.retention,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		raw, err := json.Marshal(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire struct {
+			Instructions json.RawMessage `json:"instructions"`
+			Input        json.RawMessage `json:"input"`
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			t.Fatalf("%s: decode wire: %v", c.name, err)
+		}
+		if string(wire.Instructions) != c.instructions {
+			t.Errorf("%s: instructions = %s, want %s", c.name, wire.Instructions, c.instructions)
+		}
+		var g, w any
+		json.Unmarshal(wire.Input, &g)
+		json.Unmarshal([]byte(c.input), &w)
+		if !reflect.DeepEqual(g, w) {
+			t.Errorf("%s: input = %s, want %s", c.name, wire.Input, c.input)
+		}
+	}
+}
+
 func TestResponsesAssistantImageDropped(t *testing.T) {
 	params, _, err := encodeResponsesRequest("gpt-test", &koine.LanguageRequest{
 		Messages: []koine.Message{

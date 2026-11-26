@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking**: openai `LanguageModel` maps `CacheRetention` to an explicit cache breakpoint on the system prompt. Models before GPT-5.6 reject the breakpoint; leave `CacheRetention` unset for them.
+
 ## [0.3.3] - 2026-11-24
 
 ### Added

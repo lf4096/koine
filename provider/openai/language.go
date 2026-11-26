@@ -48,9 +48,7 @@ func (m *LanguageModel) Model() string { return m.model }
 func (m *LanguageModel) Provider() string { return Name }
 
 func (m *LanguageModel) Capabilities() koine.LanguageCapabilities {
-	// Prompt caching is automatic on OpenAI; there is no cache control to
-	// express, so CacheControl stays false.
-	return koine.LanguageCapabilities{Thinking: true, ParallelToolCalls: true, Images: true, SystemMessages: true, StructuredOutput: true}
+	return koine.LanguageCapabilities{Thinking: true, CacheControl: true, ParallelToolCalls: true, Images: true, SystemMessages: true, StructuredOutput: true}
 }
 
 // Complete performs one Responses call and returns the final response.

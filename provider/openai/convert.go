@@ -130,7 +130,14 @@ func encodeResponsesRequest(model string, req *koine.LanguageRequest) (responses
 		Store:   openai.Bool(false),
 		Include: []responses.ResponseIncludable{responses.ResponseIncludableReasoningEncryptedContent},
 	}
-	if req.System != "" {
+	messages := req.Messages
+	breakpoint := req.CacheRetention == koine.CacheShort || req.CacheRetention == koine.CacheLong
+	switch {
+	case req.System == "":
+	case breakpoint:
+		// Top-level instructions cannot carry a cache breakpoint.
+		messages = append([]koine.Message{koine.SystemText(req.System)}, messages...)
+	default:
 		params.Instructions = openai.String(req.System)
 	}
 	if req.MaxTokens > 0 {
@@ -156,7 +163,7 @@ func encodeResponsesRequest(model string, req *koine.LanguageRequest) (responses
 	if rf := req.ResponseFormat; rf != nil {
 		params.Text.Format = encodeResponsesFormat(rf)
 	}
-	input, err := encodeResponsesInput(req.Messages)
+	input, err := encodeResponsesInput(messages, breakpoint)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, err
 	}
@@ -211,23 +218,27 @@ func encodeResponsesToolChoice(tc *koine.ToolChoice) responses.ResponseNewParams
 	}
 }
 
-func encodeResponsesInput(msgs []koine.Message) (responses.ResponseInputParam, error) {
+func encodeResponsesInput(msgs []koine.Message, breakpoint bool) (responses.ResponseInputParam, error) {
 	var input responses.ResponseInputParam
-	for _, m := range msgs {
+	for i, m := range msgs {
 		switch m.Role {
 		case koine.RoleSystem:
 			texts, err := systemTexts(m.Blocks)
 			if err != nil {
 				return nil, err
 			}
-			switch len(texts) {
-			case 0:
-			case 1:
+			mark := breakpoint && i == 0
+			switch {
+			case len(texts) == 0:
+			case len(texts) == 1 && !mark:
 				input = append(input, responses.ResponseInputItemParamOfMessage(texts[0], responses.EasyInputMessageRoleDeveloper))
 			default:
 				var parts responses.ResponseInputMessageContentListParam
 				for _, text := range texts {
 					parts = append(parts, responses.ResponseInputContentParamOfInputText(text))
+				}
+				if mark {
+					parts[0].OfInputText.PromptCacheBreakpoint = responses.NewResponseInputTextPromptCacheBreakpointParam()
 				}
 				input = append(input, responses.ResponseInputItemParamOfMessage(parts, responses.EasyInputMessageRoleDeveloper))
 			}

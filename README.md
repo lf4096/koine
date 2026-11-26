@@ -188,7 +188,7 @@ Maps to each provider's native mechanism: OpenAI `text.format: json_schema` (`re
 req.CacheRetention = koine.CacheShort // Anthropic: 5m TTL; koine.CacheLong: 1h
 ```
 
-On Anthropic this places `cache_control` breakpoints on the last tool, `LanguageRequest.System`, the last message and the message before the last assistant message. A new conversation with the same tools and system prompt reads them from the cache. Within a conversation, each request reads the cache entry the previous request wrote. OpenAI and Gemini cache automatically and ignore the knob. Cache accounting is always visible: `Usage.CacheReadTokens` and `Usage.CacheWriteTokens`, and `Usage.InputTokens` excludes cache hits on every provider.
+On Anthropic this places `cache_control` breakpoints on the last tool, `LanguageRequest.System`, the last message and the message before the last assistant message. A new conversation with the same tools and system prompt reads them from the cache. Within a conversation, each request reads the cache entry the previous request wrote. On OpenAI `LanguageModel` it places one breakpoint, on `LanguageRequest.System`. Models before GPT-5.6 reject it, so leave the knob unset for them; both retentions give the default lifetime. `ChatCompletionsModel` and Gemini cache automatically and ignore the knob. Cache accounting is always visible: `Usage.CacheReadTokens` and `Usage.CacheWriteTokens`, and `Usage.InputTokens` excludes cache hits on every provider.
 
 ### Capabilities
 
