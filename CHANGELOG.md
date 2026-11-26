@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.4] - 2026-11-26
 
 ### Changed
 
@@ -97,7 +97,8 @@ Initial release.
 - Four protocol providers: `anthropic`, `openai`, `gemini`, and `vertex`.
 - Language surface: streaming and non-streaming calls, tool use, thinking/reasoning, prompt caching, structured output, and usage accounting.
 
-[Unreleased]: https://github.com/lf4096/koine/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/lf4096/koine/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/lf4096/koine/releases/tag/v0.3.4
 [0.3.3]: https://github.com/lf4096/koine/releases/tag/v0.3.3
 [0.3.2]: https://github.com/lf4096/koine/releases/tag/v0.3.2
 [0.3.1]: https://github.com/lf4096/koine/releases/tag/v0.3.1
